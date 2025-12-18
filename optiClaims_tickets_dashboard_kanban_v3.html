@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>OptiClaims — Executive Dashboard</title>
+  <style>
+    :root {
+      /* Palette Professionnelle (Slate & Indigo) */
+      --bg-body: #f1f5f9;
+      --bg-surface: #ffffff;
+      --bg-subtle: #f8fafc;
+      
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --text-light: #94a3b8;
+
+      --primary: #4f46e5;       /* Indigo 600 */
+      --primary-soft: #eef2ff;
+      --accent: #0ea5e9;        /* Sky 500 */
+      --success: #10b981;
+      --danger: #ef4444;
+      --border: #e2e8f0;
+      
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+      --shadow-drawer: -5px 0 25px rgba(0,0,0,0.1);
+
+      --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      
+      --radius: 12px;
+    }
+
+    /* Dark Mode Variables */
+    [data-theme="dark"] {
+      --bg-body: #0f172a;
+      --bg-surface: #1e293b;
+      --bg-subtle: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-light: #64748b;
+      --border: #334155;
+      --primary-soft: #1e1b4b;
+      --shadow-drawer: -5px 0 25px rgba(0,0,0,0.5);
+    }
+
+    * { box-sizing: border-box; outline: none; }
+    
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    /* --- Header & KPIs --- */
+    .topbar {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      border-radius: 8px;
+      display: grid; place-items: center;
+      color: white; font-weight: bold; font-size: 18px;
+    }
+    .brand-text h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+    .brand-text span { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+
+    .controls { display: flex; gap: 12px; align-items: center; }
+
+    .search-wrap { position: relative; }
+    .search-wrap input {
+      padding: 8px 12px 8px 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-body);
+      color: var(--text-main);
+      width: 240px;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .search-wrap input:focus { border-color: var(--primary); width: 300px; box-shadow: 0 0 0 3px var(--primary-soft); }
+    .search-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--text-light); font-size: 14px; pointer-events: none;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: var(--bg-subtle); border-color: var(--text-muted); }
+    .btn-primary { background: var(--primary); color: white; border: none; }
+    .btn-primary:hover { background: #4338ca; border: none; }
+    
+    .progress-strip {
+      height: 4px;
+      width: 100%;
+      background: var(--border);
+      position: relative;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      width: 0%;
+      transition: width 1s ease;
+    }
+
+    /* --- Board Layout --- */
+    .board-container {
+      flex: 1;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 24px;
+      display: flex;
+      gap: 20px;
+      scroll-behavior: smooth;
+    }
+
+    .stage-col {
+      min-width: 340px;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: transparent;
+    }
+
+    .stage-header {
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+    }
+    .stage-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--text-main);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .stage-badge {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    
+    .stage-body {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px; /* Space for scrollbar */
+      padding-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    /* Scrollbar styling */
+    .stage-body::-webkit-scrollbar { width: 6px; }
+    .stage-body::-webkit-scrollbar-track { background: transparent; }
+    .stage-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .stage-body::-webkit-scrollbar-thumb:hover { background: var(--text-light); }
+
+    /* --- Cards --- */
+    .ticket-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    }
+    .ticket-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--primary);
+    }
+    
+    .card-top { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .card-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-body);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .card-duration {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--primary);
+      background: var(--primary-soft);
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      color: var(--text-main);
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      font-size: 12px;
+      color: var(--text-light);
+    }
+    .meta-item { display: flex; align-items: center; gap: 4px; }
+
+    /* --- Drawer (Slide-Over) --- */
+    .drawer-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(2px);
+      z-index: 100;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    .drawer {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: 600px;
+      max-width: 90vw;
+      background: var(--bg-surface);
+      z-index: 101;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-drawer);
+      display: flex;
+      flex-direction: column;
+    }
+    .drawer.open { transform: translateX(0); }
+
+    .drawer-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .drawer-title-group h2 { margin: 0 0 4px 0; font-size: 18px; color: var(--text-main); }
+    .drawer-subtitle { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+    
+    .drawer-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    .detail-section { margin-bottom: 24px; }
+    .detail-label {
+      text-transform: uppercase;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text-light);
+      margin-bottom: 8px;
+    }
+    .detail-text { font-size: 14px; line-height: 1.6; color: var(--text-muted); }
+
+    .todo-list { list-style: none; padding: 0; margin: 0; }
+    .todo-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .todo-item:last-child { border-bottom: none; }
+    .todo-check {
+      min-width: 16px; height: 16px;
+      border: 2px solid var(--text-light);
+      border-radius: 4px;
+      margin-top: 3px;
+    }
+    
+    .code-block {
+      background: var(--bg-body);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .code-header {
+      padding: 8px 12px;
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 12px; color: var(--text-muted);
+    }
+    pre {
+      margin: 0; padding: 16px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--primary);
+    }
+
+    .drawer-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+      background: var(--bg-subtle);
+    }
+
+    /* Utilities */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+    .badge-blue { background: #dbeafe; color: #1e40af; }
+    .hidden { display: none !important; }
+    
+  </style>
+</head>
+<body data-theme="light">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">O</div>
+      <div class="brand-text">
+        <h1>OptiClaims</h1>
+        <span>Engineering Dashboard</span>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Rechercher un ticket, une API..." />
+      </div>
+      <div style="width: 1px; height: 24px; background: var(--border); margin: 0 8px;"></div>
+      <button class="btn" id="themeToggle">🌗 Thème</button>
+      <button class="btn btn-primary" onclick="alert('Fonctionnalité export à venir')">Export PDF</button>
+    </div>
+  </header>
+
+  <div class="progress-strip">
+    <div class="progress-fill" id="globalProgress"></div>
+  </div>
+
+  <main class="board-container" id="boardContainer">
+    </main>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="drawer" id="ticketDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <h2 id="d-title">Ticket Title</h2>
+        <span class="drawer-subtitle" id="d-id">ID: 1.1</span>
+      </div>
+      <button class="btn" id="closeDrawer">✕</button>
+    </div>
+    <div class="drawer-content">
+      
+      <div class="detail-section">
+        <div class="detail-label">Objectif</div>
+        <div class="detail-text" id="d-desc">Description text here...</div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-label">Tâches à réaliser</div>
+        <ul class="todo-list" id="d-todos"></ul>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-label">Implémentation Technique (Code Blocks)</div>
+        <div id="d-code"></div>
+      </div>
+
+    </div>
+    <div class="drawer-footer">
+      <button class="btn" style="color:var(--danger); border-color:var(--danger)" id="btnDelete">Supprimer ce ticket</button>
+      <div style="font-size:12px; color:var(--text-muted); display:flex; align-items:center;">
+        Statut: <strong style="margin-left:4px">À faire</strong>
+      </div>
+    </div>
+  </aside>
+
+<script>
+/* --- DATA --- */
+const DATA = {"tickets": [{"ticket_id": "1.1", "ticket_title": "Mock API Salesforce - Récupération Data", "duration": "0.5j", "description": "Créer un mock de l'API Salesforce qui retourne documents + JSON des champs à remplir basé sur record_id", "stage_num": "1", "stage_title": "Endpoint Récupération Data Salesforce", "todos": ["Créer route POST `/mock/salesforce/get-record-data`", "Définir le format de réponse JSON :", "Créer 3-5 datasets mock pour différents types de records", "Implémenter la logique de sélection du mock selon record_id", "Ajouter gestion d'erreurs (record_id invalide)", "Tester avec différents record_id"], "code_blocks": []}, {"ticket_id": "1.2", "ticket_title": "Endpoint MCP - Request Salesforce Data", "duration": "0.5j", "description": "Endpoint réel qui appelle le mock Salesforce et retourne la data formatée", "stage_num": "1", "stage_title": "Endpoint Récupération Data Salesforce", "todos": ["Créer route POST `/api/mcp/request-salesforce-data`", "Paramètres d'entrée : `{\"record_id\": \"001XXXX\"}`", "Implémenter `fetch_salesforce_data(record_id)` → appel au mock", "Valider la structure de la réponse reçue", "Ajouter logging : `[INFO] Data fetched for record_id: {record_id}`", "Gérer timeout et erreurs de connexion", "Retourner JSON standardisé avec status code approprié", "Tester avec Postman/curl"], "code_blocks": []}, {"ticket_id": "2.1", "ticket_title": "Infrastructure Session Storage", "duration": "0.5j", "description": "Mettre en place Redis/DB pour stocker et gérer les sessions", "stage_num": "2", "stage_title": "Système de Gestion de Session", "todos": ["Installer et configurer Redis (ou alternative PostgreSQL)", "Définir le schéma de session :", "Créer les fonctions CRUD :", "`create_session(record_id, context)` → retourne session_id", "`get_session(session_id)` → retourne session object", "`update_session(session_id, updates)`", "`delete_session(session_id)`", "Configurer TTL (Time To Live) : 24h par défaut", "Tester création, récupération et expiration"], "code_blocks": []}, {"ticket_id": "2.2", "ticket_title": "Session Manager Service", "duration": "0.5j", "description": "Classe de service pour gérer la logique métier des sessions", "stage_num": "2", "stage_title": "Système de Gestion de Session", "todos": ["Créer classe `SessionManager`", "Implémenter `initialize_session(record_id, salesforce_data)` :", "Génère session_id unique (UUID)", "Stocke context initial (documents + fields)", "Retourne session_id", "Développer `check_session_exists(session_id)` → bool", "Créer `append_message_to_history(session_id, role, message)`", "Implémenter `get_session_context(session_id)` → context complet", "Ajouter `extend_session_ttl(session_id)` → reset expiration", "Tester tous les scénarios (nouvelle session, session existante, session expirée)"], "code_blocks": []}, {"ticket_id": "3.1", "ticket_title": "Mock API Salesforce Apex - Envoi Request", "duration": "0.5j", "description": "Mock de l'API Apex qui envoie record_id, session_id, user_request", "stage_num": "3", "stage_title": "Endpoint Réception User Request", "todos": ["Créer route POST `/mock/apex/send-user-request`", "Définir le format d'envoi :", "Créer 5-10 exemples de user_request réalistes :", "\"Remplis tous les champs manquants\"", "\"Quel est le montant sur la facture ?\"", "\"Corrige la date, elle semble incorrecte\"", "\"Extraire les informations du bénéficiaire\"", "Simuler cas où session_id = null (nouvelle conversation)", "Simuler cas où session_id existe (conversation continue)", "Tester l'envoi avec différentes combinaisons"], "code_blocks": []}, {"ticket_id": "3.2", "ticket_title": "Endpoint MCP - Receive User Request", "duration": "0.5j", "description": "Endpoint qui reçoit les données d'Apex et les prépare pour traitement", "stage_num": "3", "stage_title": "Endpoint Réception User Request", "todos": ["Créer route POST `/api/mcp/receive-request`", "Paramètres d'entrée : `{\"record_id\", \"session_id\", \"user_request\"}`", "Valider les paramètres requis (record_id et user_request obligatoires)", "Logger la réception : `[INFO] Request received - record_id: {}, session_id: {}`", "Stocker temporairement la requête (queue Redis)", "Retourner accusé de réception immédiat : `{\"status\": \"received\", \"request_id\": \"...\"}`", "Gérer les erreurs de validation (400 Bad Request)", "Tester avec le mock Apex"], "code_blocks": []}, {"ticket_id": "4.1", "ticket_title": "Session Validator & Router", "duration": "0.5j", "description": "Logique de vérification de session et routage du flow", "stage_num": "4", "stage_title": "Système Vérification Session et Routage", "todos": ["Créer classe `SessionRouter`", "Implémenter `validate_and_route(record_id, session_id, user_request)` :", "Développer `route_to_initialization(record_id, user_request)` :", "Appelle endpoint récupération Salesforce data", "Crée nouvelle session", "Passe au preprocessing complet", "Développer `route_to_continuation(session_id, user_request)` :", "Récupère context existant", "Ajoute user_request à l'historique", "Passe au prompt building (skip preprocessing)", "Ajouter logging détaillé du routage", "Tester les deux branches du flow"], "code_blocks": []}, {"ticket_id": "4.2", "ticket_title": "Workflow Orchestrator", "duration": "0.5j", "description": "Orchestrateur qui coordonne l'exécution séquentielle des étapes", "stage_num": "4", "stage_title": "Système Vérification Session et Routage", "todos": ["Créer classe `WorkflowOrchestrator`", "Implémenter `execute_workflow(request_data)` :", "Étape 1 : Validation & Routing", "Étape 2 : Preprocessing (si nouvelle session)", "Étape 3 : Prompt Building", "Étape 4 : Envoi vers Langgraph", "Étape 5 : Traitement réponse", "Ajouter gestion d'erreurs à chaque étape (try/catch)", "Implémenter rollback en cas d'échec", "Logger chaque transition d'étape", "Créer mécanisme de pause/reprise (pour debugging)", "Tester le workflow complet end-to-end"], "code_blocks": []}, {"ticket_id": "5.1", "ticket_title": "Document Preprocessor", "duration": "0.5j", "description": "Traiter et normaliser les documents reçus de Salesforce", "stage_num": "5", "stage_title": "Preprocessing Data Salesforce", "todos": ["Créer classe `DocumentPreprocessor`", "Implémenter `process_documents(documents_list)` :", "Décoder base64 → fichiers binaires", "Valider format (PDF, JPG, PNG)", "Détecter orientation et corriger si nécessaire", "Améliorer qualité image (contraste, résolution)", "Générer thumbnails pour UI", "Développer `extract_document_metadata(document)` :", "Nom fichier, taille, type MIME", "Nombre de pages (pour PDF)", "Dimensions (pour images)", "Créer `validate_document_quality(document)` → score qualité", "Retourner liste de documents normalisés", "Tester avec documents de qualité variable"], "code_blocks": []}, {"ticket_id": "5.2", "ticket_title": "Fields Dictionary Preprocessor", "duration": "0.5j", "description": "Préparer et enrichir le dictionnaire des champs à remplir", "stage_num": "5", "stage_title": "Preprocessing Data Salesforce", "todos": ["Créer classe `FieldsDictionaryPreprocessor`", "Implémenter `prepare_fields_dictionary(fields_to_fill)` :", "Identifier champs vides vs préremplis", "Ajouter contexte métier par type de champ", "Générer exemples de valeurs attendues", "Définir règles de validation par champ", "Développer `enrich_field_metadata(field)` :", "Créer templates d'enrichissement par record_type", "Implémenter `prioritize_fields()` → ordre de remplissage", "Retourner dictionnaire enrichi", "Tester avec différents types de formulaires"], "code_blocks": []}, {"ticket_id": "5.3", "ticket_title": "Preprocessing Pipeline", "duration": "0.5j", "description": "Pipeline complet de preprocessing coordonnant documents et fields", "stage_num": "5", "stage_title": "Preprocessing Data Salesforce", "todos": ["Créer classe `PreprocessingPipeline`", "Implémenter `execute_preprocessing(salesforce_data)` :", "Étape 1 : Process documents", "Étape 2 : Prepare fields dictionary", "Étape 3 : Cross-validation (cohérence)", "Étape 4 : Génération résumé contexte", "Développer `generate_context_summary()` :", "Type de record et objectif", "Documents disponibles", "Champs à extraire", "Règles métier applicables", "Créer `prepare_for_llm()` → format optimisé pour prompt", "Ajouter métriques : temps preprocessing, taille data", "Retourner objet `PreprocessedData`", "Tester performance sur large volume"], "code_blocks": []}, {"ticket_id": "6.1", "ticket_title": "Prompt Template Engine", "duration": "0.5j", "description": "Système de templates pour générer des prompts dynamiques", "stage_num": "6", "stage_title": "Création Prompt", "todos": ["Créer classe `PromptTemplateEngine`", "Définir templates par scénario :", "Template \"Initialization\" (première requête)", "Template \"Extraction\" (remplissage champs)", "Template \"Clarification\" (questions user)", "Template \"Validation\" (vérification données)", "Implémenter `load_template(scenario_type)` → template Jinja2", "Créer variables de template :", "`{{context_summary}}`", "`{{documents_description}}`", "`{{fields_to_fill}}`", "`{{user_request}}`", "`{{conversation_history}}`", "`{{instructions}}`", "Développer `render_template(template, variables)` → prompt final", "Tester génération pour chaque scénario"], "code_blocks": []}, {"ticket_id": "6.2", "ticket_title": "Prompt Builder - Nouvelle Session", "duration": "0.5j", "description": "Construire le prompt pour une nouvelle session (route initialization)", "stage_num": "6", "stage_title": "Création Prompt", "todos": ["Créer méthode `build_initialization_prompt(preprocessed_data, user_request)`", "Structurer le prompt :", "Implémenter `format_documents_section(documents)`", "Implémenter `format_fields_section(fields_dictionary)`", "Ajouter instructions spécifiques par record_type", "Optimiser longueur prompt (limite tokens)", "Tester génération et qualité du prompt"], "code_blocks": []}, {"ticket_id": "6.3", "ticket_title": "Prompt Builder - Session Continue", "duration": "0.5j", "description": "Construire le prompt pour une session existante (route continuation)", "stage_num": "6", "stage_title": "Création Prompt", "todos": ["Créer méthode `build_continuation_prompt(session_context, user_request)`", "Structurer le prompt :", "Implémenter `summarize_conversation_history(history)` (max 5 derniers échanges)", "Développer `format_extracted_data(extracted_fields)`", "Gérer cas où historique est long (truncation intelligente)", "Ajouter contexte de validation si corrections demandées", "Tester avec conversations complexes"], "code_blocks": []}, {"ticket_id": "6.4", "ticket_title": "Prompt Optimizer", "duration": "0.5j", "description": "Optimiser les prompts pour performance et coût", "stage_num": "6", "stage_title": "Création Prompt", "todos": ["Créer classe `PromptOptimizer`", "Implémenter `count_tokens(prompt)` → estimation tokens", "Développer `compress_prompt_if_needed(prompt, max_tokens)` :", "Réduire historique conversation", "Résumer documents longs", "Simplifier instructions redondantes", "Créer `validate_prompt_quality(prompt)` :", "Vérifier présence éléments clés", "Détecter ambiguïtés", "Scorer clarté instructions", "Implémenter cache de prompts similaires", "Ajouter métriques : tokens utilisés, coût estimé", "Tester optimisation sur prompts volumineux"], "code_blocks": []}, {"ticket_id": "7.1", "ticket_title": "MCP Client Configuration", "duration": "0.5j", "description": "Configurer le client MCP pour communication avec backend Langgraph", "stage_num": "7", "stage_title": "MCP Transfert vers Langgraph", "todos": ["Installer SDK MCP (Model Context Protocol)", "Configurer connexion au serveur Langgraph :", "URL endpoint", "Authentification (API key/token)", "Timeout et retry policy", "Créer classe `MCPClient`", "Implémenter `connect()` et `disconnect()`", "Ajouter health check : `ping_langgraph_backend()`", "Configurer pool de connexions (pour performance)", "Tester connexion et latence"], "code_blocks": []}, {"ticket_id": "7.2", "ticket_title": "Message Formatter MCP", "duration": "0.5j", "description": "Formater les messages selon le protocole MCP", "stage_num": "7", "stage_title": "MCP Transfert vers Langgraph", "todos": ["Créer classe `MCPMessageFormatter`", "Définir structure message MCP :", "Implémenter `format_message(prompt, context, metadata)`", "Développer `serialize_documents_for_mcp(documents)` (encodage adapté)", "Créer `add_metadata(message, metadata_dict)`", "Valider taille message (limite protocole MCP)", "Tester sérialisation et désérialisation"], "code_blocks": []}, {"ticket_id": "7.3", "ticket_title": "MCP Sender & Response Handler", "duration": "0.5j", "description": "Envoyer les messages via MCP et gérer les réponses", "stage_num": "7", "stage_title": "MCP Transfert vers Langgraph", "todos": ["Créer classe `MCPSender`", "Implémenter `send_to_langgraph(mcp_message)` :", "Envoie message via MCP", "Attend réponse (synchrone ou asynchrone)", "Retourne response_object", "Développer `handle_langgraph_response(response)` :", "Parser la réponse JSON", "Extraire extracted_data et confidence_scores", "Valider structure de la réponse", "Implémenter gestion erreurs :", "Timeout → retry avec backoff", "Erreur serveur → log et alerte", "Réponse invalide → demande clarification", "Ajouter logging détaillé des échanges", "Créer métriques : temps round-trip, taux succès", "Tester avec mock de Langgraph"], "code_blocks": []}, {"ticket_id": "7.4", "ticket_title": "Async Task Queue", "duration": "0.5j", "description": "Queue asynchrone pour gérer les envois MCP (éviter blocking)", "stage_num": "7", "stage_title": "MCP Transfert vers Langgraph", "todos": ["Installer Celery ou RQ (Redis Queue)", "Configurer Redis comme message broker", "Créer task asynchrone `@task send_to_langgraph_async(message)` :", "Exécute envoi MCP en background", "Met à jour status dans DB", "Callback sur completion", "Implémenter `enqueue_request(mcp_message)` → retourne task_id", "Développer `check_task_status(task_id)` → pending|completed|failed", "Créer endpoint `/api/task-status/{task_id}` pour polling", "Configurer retry automatique en cas d'échec", "Tester charge avec 100+ requêtes simultanées"], "code_blocks": []}, {"ticket_id": "8.1", "ticket_title": "Architecture Langgraph State", "duration": "0.5j", "description": "Définir la structure du State et initialiser le graph", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Créer classe `OptiClaimsState(TypedDict)` :", "Initialiser `StateGraph(OptiClaimsState)`", "Définir les nodes du graph :", "`ocr_extraction`", "`field_mapping`", "`data_extraction`", "`supervision_validation`", "`response_formatting`", "Configurer les edges conditionnels", "Compiler le graph : `graph.compile()`", "Tester création et invocation du graph"], "code_blocks": []}, {"ticket_id": "8.2", "ticket_title": "OCR Manager Node", "duration": "0.5j", "description": "Node Langgraph pour extraction OCR avec Sentra GPT", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Créer fonction `ocr_extraction_node(state: OptiClaimsState)` :", "Récupère documents depuis state", "Appelle Sentra GPT pour OCR", "Extrait texte brut de chaque document", "Consolide textes multiples", "Met à jour `state[\"raw_ocr_text\"]`", "Intégrer API Sentra GPT :", "Authentification", "Envoi documents encodés", "Réception résultats OCR", "Implémenter scoring confiance OCR par document", "Gérer erreurs OCR (document illisible)", "Ajouter logging : tokens utilisés, temps traitement", "Tester avec documents de qualité variable"], "code_blocks": []}, {"ticket_id": "8.3", "ticket_title": "Mapping Manager Node", "duration": "0.5j", "description": "Node pour mapper les données extraites aux champs Salesforce", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Créer fonction `field_mapping_node(state: OptiClaimsState)` :", "Récupère `raw_ocr_text` et `fields_dictionary`", "Appelle Sentra GPT avec prompt de mapping", "Identifie correspondances texte OCR ↔ champs SF", "Génère mapping structuré", "Met à jour state avec mappings", "Développer prompt de mapping :", "Implémenter validation des mappings", "Gérer cas où champ non trouvé dans OCR", "Tester avec différents types de documents"], "code_blocks": []}, {"ticket_id": "8.4", "ticket_title": "Data Extraction Node", "duration": "0.5j", "description": "Node pour extraire et structurer les données finales", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Créer fonction `data_extraction_node(state: OptiClaimsState)` :", "Utilise les mappings pour extraire valeurs", "Applique formatage par type de champ (dates, montants)", "Normalise les données (trim, uppercase, etc.)", "Calcule confiance par champ", "Met à jour `state[\"extracted_data\"]`", "Implémenter extracteurs spécialisés :", "`extract_amount(text)` → float", "`extract_date(text)` → ISO format", "`extract_name(text)` → capitalized string", "Gérer ambiguïtés (plusieurs dates/montants dans le texte)", "Créer système de scoring multi-critères :", "Clarté de la source", "Cohérence avec format attendu", "Validation croisée", "Tester extraction sur cas complexes"], "code_blocks": []}, {"ticket_id": "8.5", "ticket_title": "Superviseur Node", "duration": "0.5j", "description": "Node de validation et contrôle qualité final", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Créer fonction `supervision_validation_node(state: OptiClaimsState)` :", "Récupère `extracted_data` et `confidence_scores`", "Appelle Sentra GPT pour validation sémantique", "Vérifie cohérence globale des données", "Détecte anomalies (montant négatif, date future, etc.)", "Met à jour `state[\"validation_results\"]`", "Implémenter règles de validation :", "Développer `calculate_global_quality_score(validation_results)` → 0-100", "Créer logique conditionnelle :", "Si score > 85% → passer à response", "Si score 50-85% → signaler champs incertains", "Si score < 50% → demander clarification user", "Tester validation avec données correctes et incorrectes"], "code_blocks": []}, {"ticket_id": "8.6", "ticket_title": "Response Formatting Node", "duration": "0.5j", "description": "Node pour formater la réponse finale destinée à Salesforce", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Créer fonction `response_formatting_node(state: OptiClaimsState)` :", "Prépare réponse structurée pour UI/Salesforce", "Inclut extracted_data + confidence + validation", "Ajoute suggestions si données incomplètes", "Formate message pour l'utilisateur", "Définir structure de réponse :", "Implémenter `generate_user_message(validation_results)`", "Créer suggestions automatiques si données manquantes", "Ajouter métadonnées : temps traitement, tokens utilisés", "Tester formatage pour différents statuts"], "code_blocks": []}, {"ticket_id": "8.7", "ticket_title": "Langgraph Workflow Integration", "duration": "0.5j", "description": "Assembler tous les nodes dans le workflow complet", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Configurer le flow du graph :", "Implémenter `should_retry(state)` → décision conditionnelle", "Configurer checkpointing pour état persistant", "Ajouter logging à chaque transition", "Créer mécanisme de pause/debug", "Tester workflow complet end-to-end"], "code_blocks": []}, {"ticket_id": "8.8", "ticket_title": "Memory & State Persistence", "duration": "0.5j", "description": "Gérer la persistance du state Langgraph entre invocations", "stage_num": "8", "stage_title": "Développement Langgraph Backend", "todos": ["Configurer MemorySaver pour Langgraph :", "Implémenter sauvegarde state après chaque node", "Créer `load_state_from_session(session_id)` → restaure state", "Développer `save_state_to_session(session_id, state)`", "Gérer historique des states (pour rollback si nécessaire)", "Configurer nettoyage automatique des vieux states (>24h)", "Tester persistance avec interruptions volontaires"], "code_blocks": []}, {"ticket_id": "9.1", "ticket_title": "Conversation History Logger", "duration": "0.5j", "description": "Logger tous les messages échangés avec session_id", "stage_num": "9", "stage_title": "Monitoring des Échanges", "todos": ["Créer table/collection `conversation_logs` :", "Créer classe `ConversationLogger`", "Implémenter `log_user_message(session_id, message)`", "Implémenter `log_assistant_response(session_id, response, metadata)`", "Développer `get_conversation_history(session_id)` → liste messages", "Ajouter index sur session_id pour performance", "Tester insertion et récupération"], "code_blocks": []}, {"ticket_id": "9.2", "ticket_title": "Request Tracking System", "duration": "0.5j", "description": "Tracker chaque requête avec métadonnées complètes", "stage_num": "9", "stage_title": "Monitoring des Échanges", "todos": ["Créer table `request_tracking` :", "Implémenter `create_request_track(session_id, user_request)`", "Développer `update_request_status(request_id, status, data)`", "Créer `finalize_request_track(request_id, response, metrics)`", "Ajouter calcul automatique processing_time", "Implémenter queries d'analyse :", "Temps moyen par type de requête", "Taux de succès/échec", "Distribution des quality scores", "Tester tracking workflow complet"], "code_blocks": []}, {"ticket_id": "9.3", "ticket_title": "Monitoring Dashboard Backend", "duration": "0.5j", "description": "API pour alimenter le dashboard de monitoring", "stage_num": "9", "stage_title": "Monitoring des Échanges", "todos": ["Créer route GET `/api/monitoring/sessions/active` :", "Retourne liste sessions actives avec dernière activité", "Créer route GET `/api/monitoring/session/{session_id}/history` :", "Retourne historique complet d'une session", "Créer route GET `/api/monitoring/stats` :", "Implémenter route GET `/api/monitoring/requests/recent` :", "50 dernières requêtes avec status", "Créer route GET `/api/monitoring/errors` :", "Liste erreurs récentes avec détails", "Ajouter pagination et filtres (par date, status, record_id)", "Tester performance des queries"], "code_blocks": []}, {"ticket_id": "9.4", "ticket_title": "Real-time Monitoring avec WebSocket", "duration": "0.5j", "description": "Streaming temps réel des événements pour le dashboard", "stage_num": "9", "stage_title": "Monitoring des Échanges", "todos": ["Configurer WebSocket server (Socket.IO ou native)", "Créer endpoint WebSocket `/ws/monitoring`", "Implémenter événements temps réel :", "`new_request` → nouvelle requête reçue", "`request_completed` → traitement terminé", "`request_failed` → erreur survenue", "`session_created` → nouvelle session", "Développer `broadcast_event(event_type, data)` :", "Envoie à tous les clients connectés", "Créer mécanisme de subscription par session_id", "Implémenter heartbeat pour maintenir connexion", "Tester avec client WebSocket (navigateur ou Postman)"], "code_blocks": []}, {"ticket_id": "10.1", "ticket_title": "Response Formatter for Salesforce", "duration": "0.5j", "description": "Formater la réponse Langgraph au format attendu par Salesforce", "stage_num": "10", "stage_title": "Endpoint Envoi Réponse Salesforce", "todos": ["Créer classe `SalesforceResponseFormatter`", "Implémenter `format_for_salesforce(langgraph_response)` :", "Développer `map_field_names_to_salesforce_api(extracted_data)`", "Implémenter conversion types de données (date format, currency)", "Ajouter flag `requires_review` si confiance < seuil", "Créer résumé validation pour UI Salesforce", "Tester formatage pour différents scénarios"], "code_blocks": []}, {"ticket_id": "10.2", "ticket_title": "Mock API Salesforce - Receive Response", "duration": "0.5j", "description": "Mock de l'API Salesforce qui reçoit la réponse", "stage_num": "10", "stage_title": "Endpoint Envoi Réponse Salesforce", "todos": ["Créer route POST `/mock/salesforce/receive-response`", "Implémenter validation de la réponse reçue :", "Vérifier structure JSON", "Valider présence champs obligatoires", "Tester cohérence des données", "Simuler mise à jour du record Salesforce", "Logger la réception : `[MOCK SF] Response received for record {record_id}`", "Retourner accusé réception :", "Créer endpoint GET `/mock/salesforce/record/{record_id}` pour vérifier MAJ", "Tester réception et traitement"], "code_blocks": []}, {"ticket_id": "10.3", "ticket_title": "Endpoint MCP - Send Response to Salesforce", "duration": "0.5j", "description": "Endpoint qui envoie la réponse finale vers Salesforce", "stage_num": "10", "stage_title": "Endpoint Envoi Réponse Salesforce", "todos": ["Créer route POST `/api/mcp/send-response-salesforce`", "Paramètres d'entrée : `{\"langgraph_response\": {...}}`", "Implémenter `send_to_salesforce(formatted_response)` :", "Appelle API Salesforce (ou mock)", "Gère authentification Salesforce", "Envoie données formatées", "Attend confirmation", "Développer retry logic avec backoff exponentiel :", "Max 3 tentatives", "Délai : 2s, 4s, 8s", "Ajouter flag `response_sent` dans tracking :", "Logger chaque tentative et résultat", "Gérer erreurs Salesforce (record locked, validation rules)", "Tester avec le mock Salesforce"], "code_blocks": []}, {"ticket_id": "10.4", "ticket_title": "Response Delivery Monitor", "duration": "0.5j", "description": "Système de monitoring de la livraison des réponses", "stage_num": "10", "stage_title": "Endpoint Envoi Réponse Salesforce", "todos": ["Créer classe `ResponseDeliveryMonitor`", "Implémenter `track_delivery(request_id, status)` :", "`pending` → en attente envoi", "`sending` → envoi en cours", "`delivered` → livré avec succès", "`failed` → échec après retries", "Développer `check_undelivered_responses()` :", "Query les réponses non livrées", "Trigger retry automatique", "Alerte si échec répété", "Créer job périodique (cron) :", "Toutes les 5 minutes", "Vérifie réponses pending > 10 minutes", "Relance envoi", "Implémenter métriques :", "Taux de livraison (delivered / total)", "Temps moyen de livraison", "Nombre de retries nécessaires", "Créer endpoint `/api/monitoring/delivery-status`", "Tester avec scénarios d'échec réseau"], "code_blocks": []}, {"ticket_id": "10.5", "ticket_title": "End-to-End Integration Test", "duration": "0.5j", "description": "Test complet du flux depuis Apex jusqu'à réponse Salesforce", "stage_num": "10", "stage_title": "Endpoint Envoi Réponse Salesforce", "todos": ["Créer script de test E2E `test_full_workflow.py` :", "Tester avec 3 scénarios :", "Scénario 1 : Nouvelle session, extraction complète", "Scénario 2 : Session continue, clarification", "Scénario 3 : Échec extraction, retry", "Mesurer temps end-to-end pour chaque scénario", "Valider tous les logs générés", "Vérifier état final dans Salesforce (mock)", "Documenter résultats et métriques"], "code_blocks": []}], "stages": [{"stage_num": "1", "stage_title": "Endpoint Récupération Data Salesforce", "tickets": ["1.1", "1.2"]}, {"stage_num": "2", "stage_title": "Système de Gestion de Session", "tickets": ["2.1", "2.2"]}, {"stage_num": "3", "stage_title": "Endpoint Réception User Request", "tickets": ["3.1", "3.2"]}, {"stage_num": "4", "stage_title": "Système Vérification Session et Routage", "tickets": ["4.1", "4.2"]}, {"stage_num": "5", "stage_title": "Preprocessing Data Salesforce", "tickets": ["5.1", "5.2", "5.3"]}, {"stage_num": "6", "stage_title": "Création Prompt", "tickets": ["6.1", "6.2", "6.3", "6.4"]}, {"stage_num": "7", "stage_title": "MCP Transfert vers Langgraph", "tickets": ["7.1", "7.2", "7.3", "7.4"]}, {"stage_num": "8", "stage_title": "Développement Langgraph Backend", "tickets": ["8.1", "8.2", "8.3", "8.4", "8.5", "8.6", "8.7", "8.8"]}, {"stage_num": "9", "stage_title": "Monitoring des Échanges", "tickets": ["9.1", "9.2", "9.3", "9.4"]}, {"stage_num": "10", "stage_title": "Endpoint Envoi Réponse Salesforce", "tickets": ["10.1", "10.2", "10.3", "10.4", "10.5"]}], "meta": {"total_tickets": 36}};
+
+/* --- APP LOGIC --- */
+
+// State
+let tickets = [...DATA.tickets];
+let deletedIds = new Set(JSON.parse(localStorage.getItem('opticl_del_v2') || '[]'));
+let activeTicketId = null;
+
+// DOM Elements
+const elBoard = document.getElementById('boardContainer');
+const elDrawer = document.getElementById('ticketDrawer');
+const elBackdrop = document.getElementById('drawerBackdrop');
+const elSearch = document.getElementById('searchInput');
+const elGlobalProgress = document.getElementById('globalProgress');
+
+// Init
+function init() {
+  renderBoard();
+  updateProgress();
+  
+  // Event Listeners
+  elSearch.addEventListener('input', () => renderBoard());
+  document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+  document.getElementById('closeDrawer').addEventListener('click', closeDrawer);
+  elBackdrop.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && closeDrawer());
+  
+  document.getElementById('btnDelete').addEventListener('click', () => {
+    if(activeTicketId) {
+      if(confirm('Supprimer ce ticket ?')) {
+        deletedIds.add(activeTicketId);
+        localStorage.setItem('opticl_del_v2', JSON.stringify([...deletedIds]));
+        closeDrawer();
+        renderBoard();
+        updateProgress();
+      }
+    }
+  });
+
+  // Restore theme
+  if(localStorage.getItem('opticl_theme') === 'dark') document.body.setAttribute('data-theme', 'dark');
+}
+
+function updateProgress() {
+  const total = DATA.tickets.length;
+  const current = tickets.filter(t => !deletedIds.has(t.ticket_id)).length;
+  // Just a visual fake progress for "work done" vs "total scope" logic, 
+  // or simply fill 100% if we consider "available tickets". 
+  // Let's animate it to 100% on load for effect.
+  setTimeout(() => {
+    elGlobalProgress.style.width = '100%'; 
+  }, 200);
+}
+
+function toggleTheme() {
+  const isDark = document.body.getAttribute('data-theme') === 'dark';
+  document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  localStorage.setItem('opticl_theme', isDark ? 'light' : 'dark');
+}
+
+function renderBoard() {
+  const query = elSearch.value.toLowerCase();
+  
+  // Group by stage
+  const stages = DATA.stages.sort((a,b) => parseInt(a.stage_num) - parseInt(b.stage_num));
+  
+  elBoard.innerHTML = stages.map(stage => {
+    const stageTickets = tickets.filter(t => 
+      t.stage_num === stage.stage_num &&
+      !deletedIds.has(t.ticket_id) && 
+      (t.ticket_title.toLowerCase().includes(query) || t.description.toLowerCase().includes(query))
+    );
+    
+    // Don't hide empty stages, just show them empty (better structure)
+    return `
+      <div class="stage-col">
+        <div class="stage-header">
+          <div class="stage-title">
+            <span style="color:var(--text-light)">${stage.stage_num}.</span>
+            ${stage.stage_title}
+          </div>
+          <span class="stage-badge">${stageTickets.length}</span>
+        </div>
+        <div class="stage-body">
+          ${stageTickets.map(t => renderCard(t)).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Add listeners to cards
+  document.querySelectorAll('.ticket-card').forEach(card => {
+    card.addEventListener('click', () => openDrawer(card.dataset.id));
+  });
+}
+
+function renderCard(t) {
+  const todoCount = t.todos ? t.todos.length : 0;
+  return `
+    <article class="ticket-card" data-id="${t.ticket_id}">
+      <div class="card-top">
+        <span class="card-id">#${t.ticket_id}</span>
+        <span class="card-duration">⏱ ${t.duration}</span>
+      </div>
+      <div class="card-title">${t.ticket_title}</div>
+      <div class="card-desc">${t.description}</div>
+      <div class="card-meta">
+        <div class="meta-item">
+           📋 ${todoCount} tâches
+        </div>
+        <div class="meta-item" style="margin-left:auto; color:var(--primary)">
+          Voir détails →
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function openDrawer(id) {
+  const t = tickets.find(x => x.ticket_id === id);
+  if(!t) return;
+  
+  activeTicketId = id;
+  
+  // Fill Content
+  document.getElementById('d-title').textContent = t.ticket_title;
+  document.getElementById('d-id').textContent = `Ticket ID: ${t.ticket_id} • Étape ${t.stage_num}`;
+  document.getElementById('d-desc').textContent = t.description;
+  
+  // Todos
+  const todoHTML = (t.todos || []).map(todo => `
+    <li class="todo-item">
+      <div class="todo-check"></div>
+      <span style="font-size:13px; color:var(--text-main)">${todo}</span>
+    </li>
+  `).join('');
+  document.getElementById('d-todos').innerHTML = todoHTML || '<li class="todo-item" style="color:var(--text-light)">Aucune tâche listée.</li>';
+  
+  // Code Blocks
+  const codeHTML = (t.code_blocks || []).length > 0 
+    ? t.code_blocks.map((b, i) => `
+        <div class="code-block">
+          <div class="code-header">
+            <span>Snippet ${i+1} (${b.lang || 'text'})</span>
+            <button style="border:none; bg:transparent; cursor:pointer;" onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText)">📋</button>
+          </div>
+          <pre>${b.code}</pre>
+        </div>
+      `).join('')
+    : '<div style="font-style:italic; color:var(--text-light); font-size:13px;">Aucun extrait de code.</div>';
+    
+  document.getElementById('d-code').innerHTML = codeHTML;
+
+  // Open UI
+  elBackdrop.classList.add('open');
+  elDrawer.classList.add('open');
+}
+
+function closeDrawer() {
+  elBackdrop.classList.remove('open');
+  elDrawer.classList.remove('open');
+  activeTicketId = null;
+}
+
+// Start
+init();
+
+</script>
+</body>
+</html>

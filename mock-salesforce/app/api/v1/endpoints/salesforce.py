@@ -1,0 +1,216 @@
+"""Salesforce mock endpoints"""
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import JSONResponse
+from typing import Any, Dict
+import logging
+
+from app.models.schemas import GetRecordDataRequest, GetRecordDataResponse
+from app.data.mock_records import get_mock_record
+from app.core.exceptions import RecordNotFoundError, InvalidRecordIdError
+from app.core.logging import get_logger, safe_log
+
+logger = get_logger(__name__)
+
+router = APIRouter()
+
+
+@router.post(
+    "/mock/salesforce/get-record-data",
+    response_model=GetRecordDataResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get mock Salesforce record data",
+    description="Returns mock documents and fields to fill for a given record_id"
+)
+async def get_record_data(request: GetRecordDataRequest) -> JSONResponse:
+    """
+    Get mock record data for a given record_id.
+    
+    Implements robust error handling and defensive logging.
+    """
+    record_id = None
+    try:
+        # Validate input
+        if not request or not hasattr(request, "record_id"):
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Invalid request object",
+                endpoint="/mock/salesforce/get-record-data"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_REQUEST",
+                        "message": "Invalid request format",
+                        "details": None
+                    }
+                }
+            )
+        
+        record_id = request.record_id if request.record_id else None
+        
+        # Validate record_id is not None/undefined
+        if record_id is None or not record_id.strip():
+            safe_log(
+                logger,
+                logging.WARNING,
+                "Empty record_id provided",
+                endpoint="/mock/salesforce/get-record-data"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_RECORD_ID",
+                        "message": "record_id cannot be empty",
+                        "details": None
+                    }
+                }
+            )
+        
+        record_id = record_id.strip()
+        
+        # Log request
+        safe_log(
+            logger,
+            logging.INFO,
+            "Request received for record data",
+            record_id=record_id,
+            endpoint="/mock/salesforce/get-record-data"
+        )
+        
+        # Get mock data
+        try:
+            mock_data = get_mock_record(record_id)
+        except KeyError as e:
+            # Record not found
+            safe_log(
+                logger,
+                logging.WARNING,
+                "Record not found in mock data",
+                record_id=record_id,
+                error_type="KeyError",
+                error_message=str(e) if e else "Unknown"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "RECORD_NOT_FOUND",
+                        "message": f"Record {record_id} not found in mock data",
+                        "details": None
+                    }
+                }
+            )
+        except ValueError as e:
+            # Invalid record_id format
+            safe_log(
+                logger,
+                logging.WARNING,
+                "Invalid record_id format",
+                record_id=record_id or "none",
+                error_type="ValueError",
+                error_message=str(e) if e else "Unknown"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_RECORD_ID",
+                        "message": str(e) if e else "Invalid record_id format",
+                        "details": None
+                    }
+                }
+            )
+        
+        # Validate mock_data is complete
+        if not mock_data:
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Mock data is None or empty",
+                record_id=record_id
+            )
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Failed to retrieve mock data",
+                        "details": None
+                    }
+                }
+            )
+        
+        # Ensure all required fields are present
+        response_data = {
+            "record_id": mock_data.record_id if mock_data.record_id else record_id,
+            "record_type": mock_data.record_type if mock_data.record_type else "Claim",
+            "documents": [
+                {
+                    "document_id": doc.document_id if doc.document_id else f"doc_{i}",
+                    "name": doc.name if doc.name else "unknown.pdf",
+                    "url": doc.url if doc.url else "",
+                    "type": doc.type if doc.type else "application/pdf",
+                    "indexed": doc.indexed if doc.indexed is not None else True
+                }
+                for i, doc in enumerate(mock_data.documents or [], 1)
+            ],
+            "fields_to_fill": [
+                {
+                    "field_name": field.field_name if field.field_name else f"field_{i}",
+                    "field_type": field.field_type if field.field_type else "text",
+                    "value": field.value if field.value is not None else None,
+                    "required": field.required if field.required is not None else True,
+                    "label": field.label if field.label else field.field_name if field.field_name else f"Field {i}"
+                }
+                for i, field in enumerate(mock_data.fields_to_fill or [], 1)
+            ]
+        }
+        
+        # Log success
+        safe_log(
+            logger,
+            logging.INFO,
+            "Record data retrieved successfully",
+            record_id=record_id,
+            documents_count=len(response_data.get("documents", [])),
+            fields_count=len(response_data.get("fields_to_fill", []))
+        )
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "success",
+                "data": response_data
+            }
+        )
+        
+    except Exception as e:
+        # Catch-all for unexpected errors
+        safe_log(
+            logger,
+            logging.ERROR,
+            "Unexpected error in get_record_data",
+            record_id=record_id or "unknown",
+            error_type=type(e).__name__,
+            error_message=str(e) if e else "Unknown error"
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "status": "error",
+                "error": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "An internal server error occurred",
+                    "details": None
+                }
+            }
+        )
+
