@@ -159,8 +159,8 @@ class MCPSender:
             )
     
     async def _send_request(self, mcp_message: MCPMessageSchema) -> httpx.Response:
-        """Send HTTP request to Langgraph"""
-        url = f"{self.langgraph_url}/api/process"
+        """Send HTTP request to Langgraph backend"""
+        url = f"{self.langgraph_url.rstrip('/')}/api/langgraph/process-mcp-request"
         
         headers = {
             "Content-Type": "application/json"
@@ -168,12 +168,146 @@ class MCPSender:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         
-        message_dict = mcp_message.model_dump() if hasattr(mcp_message, 'model_dump') else {}
+        # Convert MCP message to format expected by backend-langgraph
+        request_body = await self._convert_mcp_message_to_langgraph_format(mcp_message)
         
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=message_dict, headers=headers)
+            response = await client.post(url, json=request_body, headers=headers)
             response.raise_for_status()
             return response
+    
+    async def _convert_mcp_message_to_langgraph_format(
+        self,
+        mcp_message: MCPMessageSchema
+    ) -> Dict[str, Any]:
+        """
+        Convert MCP message to format expected by backend-langgraph endpoint.
+        
+        Expected format:
+        {
+            "record_id": "string",
+            "session_id": "string (optional)",
+            "user_request": "string",
+            "documents": [
+                {
+                    "id": "string",
+                    "type": "string",
+                    "pages": [
+                        {
+                            "page_number": 1,
+                            "image_b64": "base64 string",
+                            "image_mime": "image/jpeg"
+                        }
+                    ]
+                }
+            ],
+            "fields_dictionary": {...}
+        }
+        """
+        import base64
+        
+        # Extract metadata
+        record_id = mcp_message.metadata.record_id if mcp_message.metadata else "unknown"
+        record_type = mcp_message.metadata.record_type if mcp_message.metadata else "Claim"
+        
+        # Extract user request from prompt
+        user_request = mcp_message.prompt or ""
+        
+        # Extract session_id from context
+        session_id = mcp_message.context.get("session_id") if mcp_message.context else None
+        
+        # Convert documents
+        documents = []
+        context_documents = mcp_message.context.get("documents", []) if mcp_message.context else []
+        
+        for doc_data in context_documents:
+            doc_id = doc_data.get("document_id") or doc_data.get("id", "unknown")
+            doc_type = doc_data.get("type", "application/pdf")
+            doc_url = doc_data.get("url", "")
+            
+            # Download document and convert to base64 if URL provided
+            pages = []
+            if doc_url:
+                try:
+                    # Download document
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        doc_response = await client.get(doc_url)
+                        doc_response.raise_for_status()
+                        doc_content = doc_response.content
+                    
+                    # Convert to base64
+                    image_b64 = base64.b64encode(doc_content).decode('utf-8')
+                    
+                    # Determine MIME type
+                    image_mime = doc_type
+                    if not image_mime or image_mime == "application/pdf":
+                        # For PDFs, we'd need to extract pages, but for now treat as single page
+                        # TODO: Implement PDF page extraction
+                        image_mime = "application/pdf"
+                    
+                    # Create single page (for now, PDFs treated as single page)
+                    # TODO: Split PDF into multiple pages
+                    pages.append({
+                        "page_number": 1,
+                        "image_b64": image_b64,
+                        "image_mime": image_mime
+                    })
+                    
+                except Exception as e:
+                    safe_log(
+                        logger,
+                        logging.WARNING,
+                        "Failed to download document, skipping",
+                        document_id=doc_id,
+                        document_url=doc_url,
+                        error_type=type(e).__name__,
+                        error_message=str(e) if e else "Unknown"
+                    )
+                    # Continue without this document
+                    continue
+            
+            if pages:
+                documents.append({
+                    "id": doc_id,
+                    "type": doc_type,
+                    "pages": pages,
+                    "metadata": doc_data.get("metadata", {})
+                })
+        
+        # Convert fields dictionary
+        fields_dictionary = {}
+        context_fields = mcp_message.context.get("fields", []) if mcp_message.context else []
+        
+        for field in context_fields:
+            if isinstance(field, dict):
+                field_name = field.get("field_name") or field.get("apiName") or "unknown"
+                fields_dictionary[field_name] = {
+                    "label": field.get("label", field_name),
+                    "type": field.get("field_type") or field.get("type", "text"),
+                    "required": field.get("required", False),
+                    "possibleValues": field.get("possibleValues", field.get("possible_values", [])),
+                    "defaultValue": field.get("defaultValue") or field.get("default_value")
+                }
+        
+        # Build request body
+        request_body = {
+            "record_id": record_id,
+            "session_id": session_id,
+            "user_request": user_request,
+            "documents": documents,
+            "fields_dictionary": fields_dictionary
+        }
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Converted MCP message to LangGraph format",
+            record_id=record_id,
+            documents_count=len(documents),
+            fields_count=len(fields_dictionary)
+        )
+        
+        return request_body
     
     async def handle_langgraph_response(
         self,
@@ -192,12 +326,24 @@ class MCPSender:
             # Parse JSON response
             response_data = response.json()
             
-            # Validate structure
-            langgraph_response = LanggraphResponseSchema(**response_data)
-            
-            # Extract data
-            extracted_data = langgraph_response.extracted_data if langgraph_response.extracted_data else {}
-            confidence_scores = langgraph_response.confidence_scores if langgraph_response.confidence_scores else {}
+            # Extract data from response structure: {"status": "success", "data": {...}}
+            if response_data.get("status") == "success" and "data" in response_data:
+                data = response_data["data"]
+                extracted_data = data.get("extracted_data", {})
+                confidence_scores = data.get("confidence_scores", {})
+                quality_score = data.get("quality_score")
+            else:
+                # Fallback: try to parse as LanggraphResponseSchema directly
+                try:
+                    langgraph_response = LanggraphResponseSchema(**response_data)
+                    extracted_data = langgraph_response.extracted_data if langgraph_response.extracted_data else {}
+                    confidence_scores = langgraph_response.confidence_scores if langgraph_response.confidence_scores else {}
+                    quality_score = langgraph_response.quality_score
+                except Exception:
+                    # Last resort: extract from top level
+                    extracted_data = response_data.get("extracted_data", {})
+                    confidence_scores = response_data.get("confidence_scores", {})
+                    quality_score = response_data.get("quality_score")
             
             # Build MCP response
             mcp_response = MCPResponseSchema(
@@ -212,7 +358,8 @@ class MCPSender:
                 logging.INFO,
                 "Langgraph response handled",
                 extracted_fields_count=len(extracted_data),
-                confidence_scores_count=len(confidence_scores)
+                confidence_scores_count=len(confidence_scores),
+                quality_score=quality_score
             )
             
             return mcp_response

@@ -51,6 +51,22 @@ class DocumentResponseSchema(BaseModel):
     indexed: bool
 
 
+# Salesforce Form Fields Schemas (new format from Salesforce API)
+class SalesforceFormFieldSchema(BaseModel):
+    """Schema for Salesforce form field (new format)"""
+    label: str
+    apiName: Optional[str] = None
+    type: str  # text, picklist, radio, number, textarea
+    required: bool
+    possibleValues: List[str] = Field(default_factory=list)
+    defaultValue: Optional[Any] = None
+
+
+class SalesforceFormFieldsResponseSchema(BaseModel):
+    """Schema for Salesforce form fields response (new format)"""
+    fields: List[SalesforceFormFieldSchema]
+
+
 class FieldToFillResponseSchema(BaseModel):
     """Field to fill response schema"""
     field_name: str
@@ -58,6 +74,44 @@ class FieldToFillResponseSchema(BaseModel):
     value: Optional[str]
     required: bool
     label: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)  # Store possibleValues, etc.
+
+    @classmethod
+    def from_salesforce_form_field(cls, field: SalesforceFormFieldSchema) -> "FieldToFillResponseSchema":
+        """Convert SalesforceFormFieldSchema to FieldToFillResponseSchema"""
+        import re
+        
+        # Generate field_name from apiName or slugify label
+        if field.apiName:
+            field_name = field.apiName
+        else:
+            # Slugify label: lowercase, replace spaces with underscores, remove special chars
+            field_name = re.sub(r'[^a-zA-Z0-9_]', '_', field.label.lower().strip())
+            field_name = re.sub(r'_+', '_', field_name).strip('_')
+            if not field_name:
+                field_name = "field_" + str(hash(field.label))[:8]
+        
+        # Normalize field_type: picklist/radio -> text (with possibleValues in metadata)
+        field_type = field.type
+        if field.type in ("picklist", "radio"):
+            field_type = "text"
+        
+        # Build metadata
+        metadata = {}
+        if field.possibleValues:
+            metadata["possibleValues"] = field.possibleValues
+        if field.defaultValue is not None:
+            metadata["defaultValue"] = field.defaultValue
+        metadata["original_type"] = field.type
+        
+        return cls(
+            field_name=field_name,
+            field_type=field_type,
+            value=str(field.defaultValue) if field.defaultValue is not None else None,
+            required=field.required,
+            label=field.label,
+            metadata=metadata
+        )
 
 
 class SalesforceDataResponseSchema(BaseModel):

@@ -3,14 +3,20 @@ from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
 import uuid
+import time
 
-from app.core.logging import get_logger, safe_log
+from app.core.logging import get_logger, safe_log, log_progress, log_timing, log_progress, log_timing
 from app.core.exceptions import (
     InvalidRequestError,
     SessionNotFoundError,
     WorkflowError
 )
 from app.services.session_router import validate_and_route
+from app.services.preprocessing.preprocessing_pipeline import PreprocessingPipeline
+from app.services.prompting.prompt_builder import PromptBuilder
+from app.services.prompting.prompt_optimizer import PromptOptimizer
+from app.services.mcp.mcp_message_formatter import MCPMessageFormatter
+from app.services.mcp.mcp_sender import MCPSender
 from app.models.schemas import (
     WorkflowRequestSchema,
     WorkflowResponseSchema,
@@ -25,6 +31,12 @@ class WorkflowOrchestrator:
     
     def __init__(self):
         """Initialize workflow orchestrator"""
+        self.preprocessing_pipeline = PreprocessingPipeline()
+        self.prompt_builder = PromptBuilder()
+        self.prompt_optimizer = PromptOptimizer()
+        self.mcp_formatter = MCPMessageFormatter()
+        self.mcp_sender = MCPSender()
+        
         safe_log(
             logger,
             logging.INFO,
@@ -57,6 +69,9 @@ class WorkflowOrchestrator:
         record_id = request_data.get("record_id") or "unknown"
         session_id = request_data.get("session_id") or "none"
         
+        # Total number of steps in workflow
+        TOTAL_STEPS = 7
+        
         workflow_state = {
             "workflow_id": workflow_id,
             "status": "pending",
@@ -67,6 +82,8 @@ class WorkflowOrchestrator:
             "started_at": datetime.utcnow().isoformat(),
             "completed_at": None
         }
+        
+        workflow_start_time = time.time()
         
         try:
             safe_log(
@@ -79,11 +96,15 @@ class WorkflowOrchestrator:
             )
             
             # Step 1: Validation & Routing
+            step_start_time = time.time()
             workflow_state["current_step"] = "validation_routing"
-            safe_log(
+            log_progress(
                 logger,
                 logging.INFO,
-                "Step 1: Validation & Routing",
+                "Starting Validation & Routing",
+                step_number=1,
+                total_steps=TOTAL_STEPS,
+                step_name="validation_routing",
                 workflow_id=workflow_id,
                 record_id=record_id,
                 session_id=session_id
@@ -102,10 +123,12 @@ class WorkflowOrchestrator:
                 workflow_state["data"]["routing"] = routing_result
                 workflow_state["steps_completed"].append("validation_routing")
                 
-                safe_log(
+                step_elapsed = time.time() - step_start_time
+                log_timing(
                     logger,
                     logging.INFO,
                     "Step 1 completed: Validation & Routing",
+                    elapsed_time=step_elapsed,
                     workflow_id=workflow_id,
                     routing_status=routing_result.get("status", "unknown")
                 )
@@ -151,29 +174,72 @@ class WorkflowOrchestrator:
             
             if routing_status == "initialization":
                 # New session: need preprocessing
-                # Step 2: Preprocessing (will be implemented in step 5)
+                # Step 2: Preprocessing
+                step_start_time = time.time()
                 workflow_state["current_step"] = "preprocessing"
-                safe_log(
+                log_progress(
                     logger,
                     logging.INFO,
-                    "Step 2: Preprocessing (skipped - to be implemented)",
+                    "Starting Preprocessing",
+                    step_number=2,
+                    total_steps=TOTAL_STEPS,
+                    step_name="preprocessing",
                     workflow_id=workflow_id,
                     record_id=record_id
                 )
-                # TODO: Implement preprocessing when step 5 is done
-                workflow_state["data"]["preprocessing"] = {
-                    "status": "skipped",
-                    "message": "Preprocessing to be implemented in step 5"
-                }
-                workflow_state["steps_completed"].append("preprocessing")
+                
+                try:
+                    salesforce_data = routing_result.get("salesforce_data")
+                    if salesforce_data:
+                        preprocessed_data = await self.preprocessing_pipeline.execute_preprocessing(salesforce_data)
+                        workflow_state["data"]["preprocessing"] = {
+                            "status": "completed",
+                            "preprocessed_data": preprocessed_data.model_dump() if hasattr(preprocessed_data, 'model_dump') else {}
+                        }
+                        workflow_state["steps_completed"].append("preprocessing")
+                        step_elapsed = time.time() - step_start_time
+                        log_timing(
+                            logger,
+                            logging.INFO,
+                            "Step 2 completed: Preprocessing",
+                            elapsed_time=step_elapsed,
+                            workflow_id=workflow_id
+                        )
+                    else:
+                        raise WorkflowError("No salesforce_data available for preprocessing")
+                        
+                except Exception as e:
+                    error_msg = str(e) if e else "Unknown error"
+                    workflow_state["errors"].append({
+                        "step": "preprocessing",
+                        "error": error_msg,
+                        "error_type": type(e).__name__
+                    })
+                    safe_log(
+                        logger,
+                        logging.ERROR,
+                        "Step 2 failed: Preprocessing",
+                        workflow_id=workflow_id,
+                        error_type=type(e).__name__,
+                        error_message=error_msg
+                    )
+                    # Continue workflow even if preprocessing fails
+                    workflow_state["data"]["preprocessing"] = {
+                        "status": "failed",
+                        "error": error_msg
+                    }
+                    workflow_state["steps_completed"].append("preprocessing")
                 
             elif routing_status == "continuation":
                 # Existing session: skip preprocessing
                 workflow_state["current_step"] = "preprocessing"
-                safe_log(
+                log_progress(
                     logger,
                     logging.INFO,
                     "Step 2: Preprocessing (skipped - continuation flow)",
+                    step_number=2,
+                    total_steps=TOTAL_STEPS,
+                    step_name="preprocessing",
                     workflow_id=workflow_id,
                     session_id=session_id
                 )
@@ -183,94 +249,315 @@ class WorkflowOrchestrator:
                 }
                 workflow_state["steps_completed"].append("preprocessing")
             
-            # Step 3: Prompt Building (will be implemented in step 6)
+            # Step 3: Prompt Building
+            step_start_time = time.time()
             workflow_state["current_step"] = "prompt_building"
-            safe_log(
+            log_progress(
                 logger,
                 logging.INFO,
-                "Step 3: Prompt Building (skipped - to be implemented)",
+                "Starting Prompt Building",
+                step_number=3,
+                total_steps=TOTAL_STEPS,
+                step_name="prompt_building",
                 workflow_id=workflow_id
             )
-            # TODO: Implement prompt building when step 6 is done
-            workflow_state["data"]["prompt_building"] = {
-                "status": "skipped",
-                "message": "Prompt building to be implemented in step 6"
-            }
-            workflow_state["steps_completed"].append("prompt_building")
             
-            # Step 4: Prompt Optimization (will be implemented in step 6)
+            try:
+                # Get preprocessed data or routing result
+                preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data")
+                if not preprocessed_data and routing_status == "continuation":
+                    # For continuation, use session context
+                    preprocessed_data = {}
+                
+                user_message = request_data.get("user_message", "")
+                prompt_result = await self.prompt_builder.build_prompt(
+                    user_message=user_message,
+                    preprocessed_data=preprocessed_data,
+                    routing_status=routing_status
+                )
+                
+                workflow_state["data"]["prompt_building"] = {
+                    "status": "completed",
+                    "prompt": prompt_result.get("prompt", ""),
+                    "scenario_type": prompt_result.get("scenario_type", "extraction")
+                }
+                workflow_state["steps_completed"].append("prompt_building")
+                step_elapsed = time.time() - step_start_time
+                log_timing(
+                    logger,
+                    logging.INFO,
+                    "Step 3 completed: Prompt Building",
+                    elapsed_time=step_elapsed,
+                    workflow_id=workflow_id
+                )
+                
+            except Exception as e:
+                error_msg = str(e) if e else "Unknown error"
+                workflow_state["errors"].append({
+                    "step": "prompt_building",
+                    "error": error_msg,
+                    "error_type": type(e).__name__
+                })
+                # Use fallback prompt
+                workflow_state["data"]["prompt_building"] = {
+                    "status": "completed",
+                    "prompt": request_data.get("user_message", "Extract data from documents"),
+                    "scenario_type": "extraction"
+                }
+                workflow_state["steps_completed"].append("prompt_building")
+            
+            # Step 4: Prompt Optimization
+            step_start_time = time.time()
             workflow_state["current_step"] = "prompt_optimization"
-            safe_log(
+            log_progress(
                 logger,
                 logging.INFO,
-                "Step 4: Prompt Optimization (skipped - to be implemented)",
+                "Starting Prompt Optimization",
+                step_number=4,
+                total_steps=TOTAL_STEPS,
+                step_name="prompt_optimization",
                 workflow_id=workflow_id
             )
-            # TODO: Implement prompt optimization when step 6 is done
-            workflow_state["data"]["prompt_optimization"] = {
-                "status": "skipped",
-                "message": "Prompt optimization to be implemented in step 6"
-            }
-            workflow_state["steps_completed"].append("prompt_optimization")
             
-            # Step 5: MCP Formatting (will be implemented in step 7)
+            try:
+                prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
+                optimized_prompt = await self.prompt_optimizer.optimize_prompt(prompt)
+                
+                workflow_state["data"]["prompt_optimization"] = {
+                    "status": "completed",
+                    "optimized_prompt": optimized_prompt.get("prompt", prompt),
+                    "optimizations_applied": optimized_prompt.get("optimizations_applied", [])
+                }
+                workflow_state["steps_completed"].append("prompt_optimization")
+                step_elapsed = time.time() - step_start_time
+                log_timing(
+                    logger,
+                    logging.INFO,
+                    "Step 4 completed: Prompt Optimization",
+                    elapsed_time=step_elapsed,
+                    workflow_id=workflow_id
+                )
+                
+            except Exception as e:
+                error_msg = str(e) if e else "Unknown error"
+                # Use original prompt if optimization fails
+                prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
+                workflow_state["data"]["prompt_optimization"] = {
+                    "status": "completed",
+                    "optimized_prompt": prompt,
+                    "optimizations_applied": []
+                }
+                workflow_state["steps_completed"].append("prompt_optimization")
+            
+            # Step 5: MCP Formatting
+            step_start_time = time.time()
             workflow_state["current_step"] = "mcp_formatting"
-            safe_log(
+            log_progress(
                 logger,
                 logging.INFO,
-                "Step 5: MCP Formatting (skipped - to be implemented)",
+                "Starting MCP Formatting",
+                step_number=5,
+                total_steps=TOTAL_STEPS,
+                step_name="mcp_formatting",
                 workflow_id=workflow_id
             )
-            # TODO: Implement MCP formatting when step 7 is done
-            workflow_state["data"]["mcp_formatting"] = {
-                "status": "skipped",
-                "message": "MCP formatting to be implemented in step 7"
-            }
-            workflow_state["steps_completed"].append("mcp_formatting")
             
-            # Step 6: MCP Sending (will be implemented in step 7)
+            try:
+                optimized_prompt = workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
+                preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
+                
+                # Prepare context for MCP
+                context = {
+                    "documents": preprocessed_data.get("processed_documents", []),
+                    "fields": preprocessed_data.get("fields_dictionary", {}).get("fields", []),
+                    "session_id": session_id if session_id != "none" else None
+                }
+                
+                metadata = {
+                    "record_id": record_id,
+                    "record_type": routing_result.get("salesforce_data", {}).get("record_type", "Claim") if routing_result.get("salesforce_data") else "Claim",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                mcp_message = self.mcp_formatter.format_message(
+                    prompt=optimized_prompt,
+                    context=context,
+                    metadata=metadata
+                )
+                
+                # Store formatted message for use in next step
+                workflow_state["data"]["mcp_formatting"] = {
+                    "status": "completed",
+                    "message_id": mcp_message.message_id if hasattr(mcp_message, 'message_id') else "unknown"
+                }
+                # Store the formatted message object in workflow state for reuse
+                workflow_state["_mcp_message"] = mcp_message
+                workflow_state["steps_completed"].append("mcp_formatting")
+                step_elapsed = time.time() - step_start_time
+                log_timing(
+                    logger,
+                    logging.INFO,
+                    "Step 5 completed: MCP Formatting",
+                    elapsed_time=step_elapsed,
+                    workflow_id=workflow_id
+                )
+                
+            except Exception as e:
+                error_msg = str(e) if e else "Unknown error"
+                workflow_state["errors"].append({
+                    "step": "mcp_formatting",
+                    "error": error_msg,
+                    "error_type": type(e).__name__
+                })
+                workflow_state["status"] = "failed"
+                return self._build_workflow_response(workflow_state)
+            
+            # Step 6: MCP Sending
+            step_start_time = time.time()
             workflow_state["current_step"] = "mcp_sending"
-            safe_log(
+            log_progress(
                 logger,
                 logging.INFO,
-                "Step 6: MCP Sending (skipped - to be implemented)",
+                "Starting MCP Sending",
+                step_number=6,
+                total_steps=TOTAL_STEPS,
+                step_name="mcp_sending",
                 workflow_id=workflow_id
             )
-            # TODO: Implement MCP sending when step 7 is done
-            workflow_state["data"]["mcp_sending"] = {
-                "status": "skipped",
-                "message": "MCP sending to be implemented in step 7"
-            }
-            workflow_state["steps_completed"].append("mcp_sending")
             
-            # Step 7: Response Handling (will be implemented in step 7)
+            try:
+                # Reuse the formatted message from step 5
+                mcp_message = workflow_state.get("_mcp_message")
+                if not mcp_message:
+                    # Fallback: format message if not stored (should not happen)
+                    safe_log(
+                        logger,
+                        logging.WARNING,
+                        "MCP message not found in workflow state, formatting again",
+                        workflow_id=workflow_id
+                    )
+                    optimized_prompt = workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
+                    preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
+                    context = {
+                        "documents": preprocessed_data.get("processed_documents", []),
+                        "fields": preprocessed_data.get("fields_dictionary", {}).get("fields", []),
+                        "session_id": session_id if session_id != "none" else None
+                    }
+                    metadata = {
+                        "record_id": record_id,
+                        "record_type": routing_result.get("salesforce_data", {}).get("record_type", "Claim") if routing_result.get("salesforce_data") else "Claim",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    mcp_message = self.mcp_formatter.format_message(
+                        prompt=optimized_prompt,
+                        context=context,
+                        metadata=metadata
+                    )
+                
+                mcp_response = await self.mcp_sender.send_to_langgraph(mcp_message, async_mode=False)
+                
+                workflow_state["data"]["mcp_sending"] = {
+                    "status": "completed",
+                    "mcp_response": {
+                        "extracted_data": mcp_response.extracted_data if hasattr(mcp_response, 'extracted_data') else {},
+                        "confidence_scores": mcp_response.confidence_scores if hasattr(mcp_response, 'confidence_scores') else {},
+                        "status": mcp_response.status if hasattr(mcp_response, 'status') else "unknown"
+                    }
+                }
+                workflow_state["steps_completed"].append("mcp_sending")
+                step_elapsed = time.time() - step_start_time
+                log_timing(
+                    logger,
+                    logging.INFO,
+                    "Step 6 completed: MCP Sending",
+                    elapsed_time=step_elapsed,
+                    workflow_id=workflow_id,
+                    extracted_fields=len(mcp_response.extracted_data if hasattr(mcp_response, 'extracted_data') else {})
+                )
+                
+            except Exception as e:
+                error_msg = str(e) if e else "Unknown error"
+                workflow_state["errors"].append({
+                    "step": "mcp_sending",
+                    "error": error_msg,
+                    "error_type": type(e).__name__
+                })
+                workflow_state["status"] = "failed"
+                return self._build_workflow_response(workflow_state)
+            
+            # Step 7: Response Handling
+            step_start_time = time.time()
             workflow_state["current_step"] = "response_handling"
-            safe_log(
+            log_progress(
                 logger,
                 logging.INFO,
-                "Step 7: Response Handling (skipped - to be implemented)",
+                "Starting Response Handling",
+                step_number=7,
+                total_steps=TOTAL_STEPS,
+                step_name="response_handling",
                 workflow_id=workflow_id
             )
-            # TODO: Implement response handling when step 7 is done
-            workflow_state["data"]["response_handling"] = {
-                "status": "skipped",
-                "message": "Response handling to be implemented in step 7"
-            }
-            workflow_state["steps_completed"].append("response_handling")
             
-            # Workflow completed (with placeholders)
+            try:
+                mcp_response_data = workflow_state["data"]["mcp_sending"].get("mcp_response", {})
+                
+                workflow_state["data"]["response_handling"] = {
+                    "status": "completed",
+                    "extracted_data": mcp_response_data.get("extracted_data", {}),
+                    "confidence_scores": mcp_response_data.get("confidence_scores", {}),
+                    "final_status": mcp_response_data.get("status", "success")
+                }
+                workflow_state["steps_completed"].append("response_handling")
+                step_elapsed = time.time() - step_start_time
+                log_timing(
+                    logger,
+                    logging.INFO,
+                    "Step 7 completed: Response Handling",
+                    elapsed_time=step_elapsed,
+                    workflow_id=workflow_id,
+                    extracted_fields=len(mcp_response_data.get("extracted_data", {}))
+                )
+                
+            except Exception as e:
+                error_msg = str(e) if e else "Unknown error"
+                workflow_state["errors"].append({
+                    "step": "response_handling",
+                    "error": error_msg,
+                    "error_type": type(e).__name__
+                })
+                # Don't fail workflow, just log error
+                workflow_state["data"]["response_handling"] = {
+                    "status": "completed",
+                    "extracted_data": {},
+                    "confidence_scores": {},
+                    "final_status": "error"
+                }
+                workflow_state["steps_completed"].append("response_handling")
+                step_elapsed = time.time() - step_start_time
+                log_timing(
+                    logger,
+                    logging.WARNING,
+                    "Step 7 completed with errors: Response Handling",
+                    elapsed_time=step_elapsed,
+                    workflow_id=workflow_id
+                )
+            
+            # Workflow completed
             workflow_state["status"] = "completed"
             workflow_state["current_step"] = None
             workflow_state["completed_at"] = datetime.utcnow().isoformat()
             
-            safe_log(
+            total_elapsed = time.time() - workflow_start_time
+            log_timing(
                 logger,
                 logging.INFO,
-                "Workflow execution completed",
+                "Workflow execution completed successfully",
+                elapsed_time=total_elapsed,
                 workflow_id=workflow_id,
                 record_id=record_id,
                 session_id=session_id,
-                steps_completed=len(workflow_state["steps_completed"])
+                steps_completed=len(workflow_state["steps_completed"]),
+                total_steps=TOTAL_STEPS
             )
             
             return self._build_workflow_response(workflow_state)

@@ -22,7 +22,7 @@ class DocumentSchema(BaseModel):
 
 
 class FieldToFillSchema(BaseModel):
-    """Field to fill schema"""
+    """Field to fill schema (old format)"""
     field_name: str = Field(..., description="Field name")
     field_type: str = Field(..., description="Field type (currency, date, text, etc.)")
     value: Optional[str] = Field(default=None, description="Current value (null if empty)")
@@ -30,6 +30,24 @@ class FieldToFillSchema(BaseModel):
     label: str = Field(..., description="Field label")
     
     @field_validator("field_name", "field_type", "label")
+    @classmethod
+    def validate_not_empty(cls, v: str) -> str:
+        """Validate that string fields are not empty"""
+        if not v or not v.strip():
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+
+class SalesforceFormFieldSchema(BaseModel):
+    """Salesforce form field schema (new format from Salesforce API)"""
+    label: str = Field(..., description="Field label")
+    apiName: Optional[str] = Field(default=None, description="API name of the field")
+    type: str = Field(..., description="Field type: text, picklist, radio, number, textarea")
+    required: bool = Field(default=False, description="Whether field is required")
+    possibleValues: List[str] = Field(default_factory=list, description="Possible values for picklist/radio")
+    defaultValue: Optional[str] = Field(default=None, description="Default value")
+    
+    @field_validator("label", "type")
     @classmethod
     def validate_not_empty(cls, v: str) -> str:
         """Validate that string fields are not empty"""
@@ -55,11 +73,30 @@ class GetRecordDataRequest(BaseModel):
 
 
 class GetRecordDataResponse(BaseModel):
-    """Response schema for record data"""
+    """Response schema for record data (supports both old and new format)"""
     record_id: str = Field(..., description="Salesforce record ID")
     record_type: str = Field(default="Claim", description="Record type")
     documents: List[DocumentSchema] = Field(default_factory=list, description="List of documents")
-    fields_to_fill: List[FieldToFillSchema] = Field(default_factory=list, description="Fields to fill")
+    fields_to_fill: List[FieldToFillSchema] = Field(default_factory=list, description="Fields to fill (old format)")
+    fields: List[SalesforceFormFieldSchema] = Field(default_factory=list, description="Fields (new format)")
+    
+    def to_dict_new_format(self) -> dict:
+        """Convert to new format dict with 'fields' instead of 'fields_to_fill'"""
+        return {
+            "record_id": self.record_id,
+            "record_type": self.record_type,
+            "documents": [doc.model_dump() for doc in self.documents],
+            "fields": [field.model_dump() for field in self.fields] if self.fields else []
+        }
+    
+    def to_dict_old_format(self) -> dict:
+        """Convert to old format dict with 'fields_to_fill'"""
+        return {
+            "record_id": self.record_id,
+            "record_type": self.record_type,
+            "documents": [doc.model_dump() for doc in self.documents],
+            "fields_to_fill": [field.model_dump() for field in self.fields_to_fill]
+        }
     
     class Config:
         json_schema_extra = {

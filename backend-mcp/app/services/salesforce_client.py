@@ -7,7 +7,13 @@ from datetime import datetime
 from app.core.config import settings
 from app.core.logging import get_logger, safe_log
 from app.core.exceptions import SalesforceClientError
-from app.models.schemas import SalesforceDataResponseSchema, DocumentResponseSchema, FieldToFillResponseSchema
+from app.models.schemas import (
+    SalesforceDataResponseSchema, 
+    DocumentResponseSchema, 
+    FieldToFillResponseSchema,
+    SalesforceFormFieldSchema,
+    SalesforceFormFieldsResponseSchema
+)
 
 logger = get_logger(__name__)
 
@@ -215,7 +221,57 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
                 ))
         
         fields_to_fill = []
+        
+        # Support both old format (fields_to_fill) and new format (fields)
+        if "fields" in data and isinstance(data["fields"], list):
+            # New format: {"fields": [{"label": "...", "apiName": "...", ...}]}
+            safe_log(
+                logger,
+                logging.INFO,
+                "Detected new Salesforce format (fields)",
+                record_id=record_id,
+                fields_count=len(data["fields"])
+            )
+            try:
+                # Parse as SalesforceFormFieldsResponseSchema
+                form_fields_response = SalesforceFormFieldsResponseSchema(fields=data["fields"])
+                # Convert each field
+                for i, field in enumerate(form_fields_response.fields, 1):
+                    try:
+                        converted_field = FieldToFillResponseSchema.from_salesforce_form_field(field)
+                        fields_to_fill.append(converted_field)
+                    except Exception as e:
+                        safe_log(
+                            logger,
+                            logging.WARNING,
+                            "Failed to convert Salesforce form field",
+                            record_id=record_id,
+                            field_index=i,
+                            field_label=field.label if hasattr(field, 'label') else 'unknown',
+                            error_type=type(e).__name__,
+                            error_message=str(e) if e else "Unknown"
+                        )
+                        continue
+            except Exception as e:
+                safe_log(
+                    logger,
+                    logging.WARNING,
+                    "Failed to parse new format, falling back to old format",
+                    record_id=record_id,
+                    error_type=type(e).__name__,
+                    error_message=str(e) if e else "Unknown"
+                )
+                # Fall through to old format handling
+        
         if "fields_to_fill" in data and isinstance(data["fields_to_fill"], list):
+            # Old format: {"fields_to_fill": [{"field_name": "...", ...}]}
+            safe_log(
+                logger,
+                logging.INFO,
+                "Using old Salesforce format (fields_to_fill)",
+                record_id=record_id,
+                fields_count=len(data["fields_to_fill"])
+            )
             for i, field in enumerate(data["fields_to_fill"], 1):
                 if not isinstance(field, dict):
                     continue
@@ -224,7 +280,8 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
                     field_type=field.get("field_type") or "text",
                     value=field.get("value") if field.get("value") is not None else None,
                     required=field.get("required") if field.get("required") is not None else True,
-                    label=field.get("label") or field.get("field_name") or f"Field {i}"
+                    label=field.get("label") or field.get("field_name") or f"Field {i}",
+                    metadata=field.get("metadata", {})
                 ))
         
         salesforce_data = SalesforceDataResponseSchema(

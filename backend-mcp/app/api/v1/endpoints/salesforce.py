@@ -79,12 +79,6 @@ async def receive_request(request: ReceiveRequestSchema, http_request: Request) 
         session_id = request.session_id if request.session_id else None
         user_message = request.user_message if request.user_message else None
         
-        # #region agent log
-        with open(r"c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log", "a") as f:
-            import json
-            from datetime import datetime
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"salesforce.py:225","message":"Validation check - record_id","data":{"record_id":record_id if record_id else "none","is_empty":not record_id or not record_id.strip()},"timestamp":int(datetime.utcnow().timestamp()*1000)}) + "\n")
-        # #endregion
         # Validate required fields
         if not record_id or not record_id.strip():
             safe_log(
@@ -160,9 +154,6 @@ async def receive_request(request: ReceiveRequestSchema, http_request: Request) 
             
             # Execute workflow
             workflow_result = await workflow_orchestrator.execute_workflow(request_data)
-            
-            # Extract routing result from workflow data
-            routing_result = workflow_result.get("data", {}).get("routing", {})
             
             # If workflow failed, return error
             if workflow_result.get("status") == "failed":
@@ -256,12 +247,12 @@ async def receive_request(request: ReceiveRequestSchema, http_request: Request) 
                 }
             )
         
-        # Validate routing result
-        if not routing_result or not isinstance(routing_result, dict):
+        # Validate workflow result
+        if not workflow_result or not isinstance(workflow_result, dict):
             safe_log(
                 logger,
                 logging.ERROR,
-                "Invalid routing result",
+                "Invalid workflow result",
                 record_id=record_id,
                 session_id=session_id or "none"
             )
@@ -271,31 +262,32 @@ async def receive_request(request: ReceiveRequestSchema, http_request: Request) 
                     "status": "error",
                     "error": {
                         "code": "INTERNAL_ERROR",
-                        "message": "Invalid routing result",
+                        "message": "Invalid workflow result",
                         "details": None
                     }
                 }
             )
         
-        # Ensure status is present
-        if "status" not in routing_result:
-            routing_result["status"] = "unknown"
-        
         # Log success
+        workflow_status = workflow_result.get("status", "unknown")
+        workflow_id = workflow_result.get("workflow_id", "unknown")
         safe_log(
             logger,
             logging.INFO,
             "Request processed successfully",
             record_id=record_id,
             session_id=session_id or "none",
-            routing_status=routing_result.get("status", "unknown")
+            workflow_status=workflow_status,
+            workflow_id=workflow_id,
+            steps_completed=len(workflow_result.get("steps_completed", []))
         )
         
+        # Return complete workflow result
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "status": "success",
-                "data": routing_result
+                "data": workflow_result
             }
         )
         

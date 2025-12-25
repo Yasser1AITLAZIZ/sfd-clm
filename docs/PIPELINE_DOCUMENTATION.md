@@ -2,38 +2,57 @@
 
 ## État d'Avancement du Projet
 
-### Services Implémentés
+> **Note** : Pour les spécifications API complètes, consultez [API_REFERENCE.md](API_REFERENCE.md)  
+> Pour les diagrammes de flux détaillés, consultez [PIPELINE_FLOW.md](PIPELINE_FLOW.md)
+
+### Services Implémentés ✅
 
 #### 1. Mock Salesforce Service (Port 8001)
-- **Statut** : ✅ Implémenté
+- **Statut** : ✅ **Complètement implémenté**
 - **Endpoints** :
   - `POST /mock/salesforce/get-record-data` : Récupération données mock
   - `POST /mock/apex/send-user-request` : Simulation envoi requête Apex
   - `GET /health` : Health check
 
 #### 2. Backend MCP Service (Port 8000)
-- **Statut** : ✅ Partiellement implémenté
+- **Statut** : ✅ **Complètement implémenté**
 - **Endpoints** :
-  - `POST /api/mcp/receive-request` : Endpoint principal (✅ Implémenté)
-  - `POST /api/mcp/request-salesforce-data` : Endpoint interne (✅ Implémenté)
-  - `GET /api/task-status/{task_id}` : Statut des tâches async (✅ Implémenté)
+  - `POST /api/mcp/receive-request` : Endpoint principal avec workflow complet
+  - `POST /api/mcp/request-salesforce-data` : Endpoint interne
+  - `GET /api/task-status/{task_id}` : Statut des tâches async
   - `GET /health` : Health check
+
+#### 3. Workflow Orchestrator
+- **Statut** : ✅ **Complètement implémenté**
+- **Fonctionnalités** :
+  - ✅ Validation & Routing (Étape 1)
+  - ✅ Fetch Salesforce Data (Étape 2)
+  - ✅ Preprocessing (Étape 3)
+  - ✅ Prompt Building (Étape 4)
+  - ✅ Prompt Optimization (Étape 5)
+  - ✅ MCP Formatting (Étape 6)
+  - ✅ MCP Sending (Étape 7)
+  - ✅ Response Handling (Étape 8)
+
+#### 4. Backend LangGraph Service (Port 8002)
+- **Statut** : ✅ **Complètement implémenté**
+- **Endpoints** :
+  - `POST /api/langgraph/process-mcp-request` : Traitement OCR + Extraction
+  - `GET /health` : Health check
+- **Fonctionnalités** :
+  - ✅ OCR Processing
+  - ✅ Field Mapping
+  - ✅ Data Extraction
+  - ✅ Validation & Quality Scoring
 
 ### Services en Développement
 
-#### 3. Workflow Orchestrator
-- **Statut** : ✅ Structure implémentée, étapes 2-7 en attente
-- **Fonctionnalités** :
-  - ✅ Validation & Routing (Étape 1)
-  - ⏳ Preprocessing (Étape 5 - à implémenter)
-  - ⏳ Prompt Building (Étape 6 - à implémenter)
-  - ⏳ MCP Transfer (Étape 7 - structure prête)
-
-#### 4. Backend Langgraph
-- **Statut** : ⏳ À venir (Étape 8)
-
-#### 5. Monitoring
-- **Statut** : ⏳ À venir (Étape 9)
+#### 5. Monitoring Dashboard
+- **Statut** : ⏳ À venir
+- **Fonctionnalités prévues** :
+  - Dashboard de monitoring en temps réel
+  - Visualisation des workflows
+  - Métriques de performance
 
 ## Architecture du Pipeline
 
@@ -73,6 +92,8 @@ flowchart TD
 ```
 
 ## Documentation des Endpoints
+
+> **⚠️ IMPORTANT** : Cette section contient une vue d'ensemble. Pour les **spécifications complètes input/output**, consultez **[API_REFERENCE.md](API_REFERENCE.md)**.
 
 ### 1. Mock Salesforce - Get Record Data
 
@@ -277,83 +298,54 @@ curl -X POST http://localhost:8001/mock/apex/send-user-request \
 - `session_id` : string | null (optionnel)
 - `user_message` : string (requis, min 1 caractère)
 
-#### Output (Succès - Initialization)
+#### Output (Succès - Workflow Complet)
+
+> **Note** : L'endpoint retourne maintenant le **workflow_result complet** avec toutes les étapes.  
+> Voir [API_REFERENCE.md](API_REFERENCE.md) pour la structure complète.
 
 ```json
 {
   "status": "success",
   "data": {
-    "status": "initialization",
-    "record_id": "001XX000001",
-    "session_id": "session-550e8400-e29b-41d4-a716-446655440000",
-    "salesforce_data": {
-      "record_id": "001XX000001",
-      "record_type": "Claim",
-      "documents": [
-        {
-          "document_id": "doc_1",
-          "name": "facture_001.pdf",
-          "url": "https://example.com/documents/facture_001.pdf",
-          "type": "application/pdf",
-          "indexed": true
-        },
-        {
-          "document_id": "doc_2",
-          "name": "photo_dommages_001.jpg",
-          "url": "https://example.com/documents/photo_dommages_001.jpg",
-          "type": "image/jpeg",
-          "indexed": true
+    "status": "completed",
+    "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
+    "steps_completed": [
+      "validation_routing",
+      "preprocessing",
+      "prompt_building",
+      "prompt_optimization",
+      "mcp_formatting",
+      "mcp_sending",
+      "response_handling"
+    ],
+    "data": {
+      "routing": {...},
+      "preprocessing": {...},
+      "prompt_building": {...},
+      "prompt_optimization": {...},
+      "mcp_formatting": {...},
+      "mcp_sending": {
+        "mcp_response": {
+          "extracted_data": {
+            "montant_total": "1250.50",
+            "date_facture": "2024-01-15"
+          },
+          "confidence_scores": {...}
         }
-      ],
-      "fields_to_fill": [
-        {
-          "field_name": "montant_total",
-          "field_type": "currency",
-          "value": null,
-          "required": true,
-          "label": "Montant total"
-        },
-        {
-          "field_name": "date_facture",
-          "field_type": "date",
-          "value": null,
-          "required": true,
-          "label": "Date de facture"
-        },
-        {
-          "field_name": "numero_facture",
-          "field_type": "text",
-          "value": null,
-          "required": true,
-          "label": "Numéro de facture"
-        },
-        {
-          "field_name": "beneficiaire_nom",
-          "field_type": "text",
-          "value": null,
-          "required": true,
-          "label": "Nom du bénéficiaire"
-        }
-      ]
-    },
-    "next_step": "preprocessing"
+      },
+      "response_handling": {
+        "extracted_data": {...},
+        "confidence_scores": {...},
+        "final_status": "success"
+      }
+    }
   }
 }
 ```
 
-#### Output (Succès - Continuation)
-
-```json
-{
-  "status": "success",
-  "data": {
-    "status": "continuation",
-    "session_id": "session-123-456-789",
-    "user_message": "Quel est le montant sur la facture ?",
-    "next_step": "prompt_building"
-  }
-}
-```
+**Accès aux données extraites** :
+- `response.data.data.response_handling.extracted_data` - Données extraites finales
+- `response.data.data.response_handling.confidence_scores` - Scores de confiance
 
 #### Output (Erreur)
 
@@ -733,41 +725,26 @@ curl -X POST http://localhost:8000/api/mcp/receive-request \
 
 ## Prochaines Étapes (À Implémenter)
 
-1. **Étape 5** : Preprocessing Pipeline
-   - Document Preprocessor
-   - Fields Dictionary Preprocessor
-   - Preprocessing Pipeline complet
+### ✅ Implémenté
 
-2. **Étape 6** : Prompt Building
-   - Prompt Template Engine
-   - Prompt Builder (Initialization & Continuation)
-   - Prompt Optimizer
+1. ✅ **Preprocessing Pipeline** - Complètement implémenté
+2. ✅ **Prompt Building** - Complètement implémenté
+3. ✅ **MCP Transfer** - Complètement implémenté
+4. ✅ **LangGraph Backend** - Complètement implémenté
 
-3. **Étape 7** : MCP Transfer
-   - MCP Client Configuration
-   - Message Formatter
-   - Sender & Response Handler
-   - Async Task Queue (partiellement fait)
+### ⏳ À Venir
 
-4. **Étape 8** : Langgraph Backend
-   - Architecture Langgraph State
-   - OCR Manager Node
-   - Mapping Manager Node
-   - Data Extraction Node
-   - Supervisor Node
-   - Response Formatting Node
-
-5. **Étape 9** : Monitoring
-   - Conversation History Logger
-   - Request Tracking System
-   - Monitoring Dashboard Backend
+1. **Monitoring Dashboard** (Étape 9)
+   - Dashboard de monitoring en temps réel
+   - Visualisation des workflows
+   - Métriques de performance
    - Real-time Monitoring avec WebSocket
 
-6. **Étape 10** : Response Delivery
-   - Response Formatter for Salesforce
-   - Mock API Receive Response
-   - Endpoint Send Response to Salesforce
-   - Response Delivery Monitor
+2. **Améliorations Futures**
+   - Traitement parallèle des documents
+   - Cache avancé pour optimisations
+   - Analytics et reporting avancés
+   - Intégration Salesforce réelle (remplacement du mock)
 
 ## Notes Techniques
 

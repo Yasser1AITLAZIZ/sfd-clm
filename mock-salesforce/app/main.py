@@ -11,7 +11,7 @@ from app.middleware.error_handler import (
     validation_exception_handler,
     http_exception_handler
 )
-from app.api.v1.endpoints import salesforce, apex
+from app.api.v1.endpoints import salesforce, apex, test
 
 import logging
 
@@ -41,6 +41,7 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 # Include routers
 app.include_router(salesforce.router, tags=["Salesforce Mock"])
 app.include_router(apex.router, tags=["Apex Mock"])
+app.include_router(test.router, tags=["Test"])
 
 
 @app.on_event("startup")

@@ -13,11 +13,9 @@ class SafeJsonFormatter(jsonlogger.JsonFormatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record safely"""
         try:
-            # Ensure all values are safe for JSON
             safe_record = self._make_safe(record)
             return super().format(safe_record)
         except Exception as e:
-            # Fallback to simple format if JSON formatting fails
             try:
                 return f"{record.levelname}: {record.getMessage()}"
             except Exception:
@@ -25,7 +23,6 @@ class SafeJsonFormatter(jsonlogger.JsonFormatter):
     
     def _make_safe(self, record: logging.LogRecord) -> logging.LogRecord:
         """Make record safe for JSON serialization"""
-        # Convert any None values to strings
         for key, value in record.__dict__.items():
             if value is None:
                 setattr(record, key, "none")
@@ -48,54 +45,40 @@ class ConsoleFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record for console output"""
         try:
-            # Get color for log level
             color = self.COLORS.get(record.levelname, self.COLORS['RESET'])
             reset = self.COLORS['RESET']
             
-            # Format timestamp
             timestamp = datetime.fromisoformat(
                 record.timestamp if hasattr(record, 'timestamp') 
                 else datetime.utcnow().isoformat()
             ).strftime("%Y-%m-%d %H:%M:%S")
             
-            # Build message parts
             level_name = f"{color}{record.levelname:8s}{reset}"
             
-            # Extract workflow progress if available
             progress_info = ""
-            if hasattr(record, 'workflow_id'):
-                progress_info = f" [WF:{record.workflow_id[:8]}]"
+            if hasattr(record, 'request_id'):
+                progress_info = f" [Req:{record.request_id[:8]}]"
             if hasattr(record, 'current_step'):
                 step_num = getattr(record, 'step_number', '?')
                 total_steps = getattr(record, 'total_steps', '?')
                 progress_info += f" [Step {step_num}/{total_steps}: {record.current_step}]"
-            elif hasattr(record, 'step_number'):
-                step_num = record.step_number
-                total_steps = getattr(record, 'total_steps', '?')
-                progress_info += f" [Step {step_num}/{total_steps}]"
             
-            # Extract timing if available
             timing_info = ""
             if hasattr(record, 'elapsed_time'):
                 timing_info = f" ({record.elapsed_time:.2f}s)"
             if hasattr(record, 'execution_time'):
                 timing_info = f" ({record.execution_time:.2f}s)"
             
-            # Build main message
             message = record.getMessage()
             
-            # Add extra context
             extra_parts = []
             if hasattr(record, 'record_id') and record.record_id != "unknown":
                 extra_parts.append(f"record_id={record.record_id}")
             if hasattr(record, 'session_id') and record.session_id not in ("none", None):
                 extra_parts.append(f"session_id={record.session_id}")
-            if hasattr(record, 'workflow_status'):
-                extra_parts.append(f"status={record.workflow_status}")
             
             context = " | ".join(extra_parts) if extra_parts else ""
             
-            # Build final log line
             parts = [f"{timestamp}", level_name]
             if progress_info:
                 parts.append(progress_info)
@@ -108,7 +91,6 @@ class ConsoleFormatter(logging.Formatter):
             return " ".join(parts)
             
         except Exception as e:
-            # Fallback to simple format
             return f"{record.levelname}: {record.getMessage()}"
 
 
@@ -124,7 +106,6 @@ def get_logger(name: str, use_console: bool = None) -> logging.Logger:
     logger = logging.getLogger(name)
     
     if not logger.handlers:
-        # Auto-detect format preference
         if use_console is None:
             log_format = os.getenv("LOG_FORMAT", "console").lower()
             use_console = log_format in ("console", "human", "readable")
@@ -132,10 +113,8 @@ def get_logger(name: str, use_console: bool = None) -> logging.Logger:
         handler = logging.StreamHandler(sys.stdout)
         
         if use_console:
-            # Use human-readable console formatter
             formatter = ConsoleFormatter()
         else:
-            # Use JSON formatter for structured logging
             formatter = SafeJsonFormatter(
                 "%(timestamp)s %(level)s %(name)s %(message)s"
             )
@@ -155,12 +134,10 @@ def safe_log(
 ) -> None:
     """Safely log a message with defensive checks"""
     try:
-        # Prepare safe extra data
         extra: Dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
         }
         
-        # Add kwargs with safe defaults
         for key, value in kwargs.items():
             if value is None:
                 extra[key] = "none"
@@ -169,7 +146,6 @@ def safe_log(
             elif isinstance(value, (int, float, bool)):
                 extra[key] = value
             else:
-                # Convert to string for safety
                 try:
                     extra[key] = str(value)
                 except Exception:
@@ -177,11 +153,10 @@ def safe_log(
         
         logger.log(level, message, extra=extra)
     except Exception as e:
-        # Logging should never break the application
         try:
             print(f"Logging error (non-critical): {e}")
         except Exception:
-            pass  # Even print can fail, so we silently ignore
+            pass
 
 
 def log_progress(

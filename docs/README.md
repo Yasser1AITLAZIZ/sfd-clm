@@ -1,49 +1,105 @@
 # Documentation OptiClaims
 
-Ce dossier contient la documentation complète du pipeline OptiClaims.
+Ce dossier contient la documentation complète et à jour du pipeline OptiClaims.
 
-## Fichiers de Documentation
+## 📚 Fichiers de Documentation
+
+### [API_REFERENCE.md](API_REFERENCE.md) ⭐ **NOUVEAU**
+
+**Référence complète de toutes les APIs** avec spécifications détaillées :
+
+- ✅ **Spécifications input/output** pour toutes les APIs
+- ✅ **Exemples de requêtes/réponses** en JSON
+- ✅ **Codes d'erreur** complets
+- ✅ **Formats de données** détaillés
+- ✅ **Exemples cURL** prêts à l'emploi
+
+**À consulter pour** : Intégration API, développement, tests
+
+### [PIPELINE_FLOW.md](PIPELINE_FLOW.md) ⭐ **NOUVEAU**
+
+**Flux visuels et détaillés du pipeline** :
+
+- ✅ **Diagrammes de flux** Mermaid complets
+- ✅ **Séquences détaillées** étape par étape
+- ✅ **Workflow Orchestrator** - 8 étapes complètes
+- ✅ **Flux Initialization vs Continuation**
+- ✅ **Gestion des erreurs** et monitoring
+- ✅ **Performance** et optimisations
+
+**À consulter pour** : Comprendre le fonctionnement, architecture, debugging
+
+### [ARCHITECTURE.md](ARCHITECTURE.md)
+
+**Architecture complète du projet** :
+
+- Vue d'ensemble des services
+- Flux de données principaux
+- Workflow Orchestrator détaillé
+- Gestion des sessions
+- Formats de données
+
+**À consulter pour** : Architecture système, design patterns
+
+### [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)
+
+**Guide d'installation complet** :
+
+- Prérequis
+- Installation manuelle des venvs
+- Scripts automatisés (Bash/PowerShell)
+- Configuration
+- Dépannage
+
+**À consulter pour** : Installation, configuration initiale
 
 ### [PIPELINE_DOCUMENTATION.md](PIPELINE_DOCUMENTATION.md)
 
-Documentation complète et exhaustive du pipeline OptiClaims incluant :
+**Documentation historique du pipeline** (à jour) :
 
-- **État d'avancement du projet** : Statut de tous les services et composants
-- **Architecture du pipeline** : Diagrammes de flux Mermaid
-- **Documentation des endpoints** : 
-  - Formats d'input exacts (JSON)
-  - Formats d'output attendus (JSON)
-  - Exemples de test avec curl
-  - Codes d'erreur
-- **Diagrammes de flux détaillés** : Workflow Orchestrator
-- **Données mock disponibles** : Tous les record_ids et exemples
-- **Scénarios de test complets** : Workflows end-to-end
-- **Structure des données** : Formats Document, Field, Session
-- **Prochaines étapes** : Roadmap d'implémentation
+- État d'avancement du projet
+- Documentation des endpoints (référencez API_REFERENCE.md pour les détails)
+- Données mock disponibles
+- Scénarios de test
+
+**À consulter pour** : Vue d'ensemble historique, données mock
 
 ### [TEST_EXAMPLES.md](TEST_EXAMPLES.md)
 
-Exemples pratiques et scripts prêts à l'emploi pour tester le pipeline :
+**Exemples pratiques de tests** :
 
-- **Tests par endpoint** : Exemples curl pour chaque endpoint
-- **Scénarios de test complets** : Workflows complets avec plusieurs étapes
-- **Scripts automatisés** : Scripts Bash et Python pour tests automatisés
-- **Vérification des résultats** : Comment vérifier les logs, Redis, réponses
-- **Notes techniques** : Conseils et bonnes pratiques
+- Tests par endpoint
+- Scénarios de test complets
+- Scripts automatisés (Bash/Python)
+- Vérification des résultats
 
-## Navigation Rapide
+**À consulter pour** : Tests, validation, exemples pratiques
+
+### [GUIDE_REDIS_WINDOWS.md](GUIDE_REDIS_WINDOWS.md) & [INSTALL_REDIS_WINDOWS.md](INSTALL_REDIS_WINDOWS.md)
+
+**Guides d'installation Redis pour Windows**
+
+**À consulter pour** : Installation Redis sur Windows
+
+## 🚀 Navigation Rapide
+
+### Pour intégrer les APIs
+→ **[API_REFERENCE.md](API_REFERENCE.md)** - Spécifications complètes input/output
+
+### Pour comprendre le flux du pipeline
+→ **[PIPELINE_FLOW.md](PIPELINE_FLOW.md)** - Diagrammes et séquences détaillées
+
+### Pour installer le projet
+→ **[INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)** - Guide complet d'installation
 
 ### Pour comprendre l'architecture
-→ Lire [PIPELINE_DOCUMENTATION.md](PIPELINE_DOCUMENTATION.md) - Section "Architecture du Pipeline"
+→ **[ARCHITECTURE.md](ARCHITECTURE.md)** - Architecture système complète
 
-### Pour tester les endpoints
-→ Lire [TEST_EXAMPLES.md](TEST_EXAMPLES.md) - Section "Tests par Endpoint"
+### Pour tester le pipeline
+→ **[TEST_EXAMPLES.md](TEST_EXAMPLES.md)** - Exemples et scripts de test
 
-### Pour comprendre les formats de données
-→ Lire [PIPELINE_DOCUMENTATION.md](PIPELINE_DOCUMENTATION.md) - Section "Structure des Données"
-
-### Pour exécuter des tests automatisés
-→ Lire [TEST_EXAMPLES.md](TEST_EXAMPLES.md) - Section "Scripts de Test Automatisés"
+### Pour les données mock
+→ **[PIPELINE_DOCUMENTATION.md](PIPELINE_DOCUMENTATION.md)** - Section "Données Mock Disponibles"
 
 ## Endpoints Principaux
 

@@ -148,31 +148,34 @@ async def get_record_data(request: GetRecordDataRequest) -> JSONResponse:
                 }
             )
         
-        # Ensure all required fields are present
-        response_data = {
-            "record_id": mock_data.record_id if mock_data.record_id else record_id,
-            "record_type": mock_data.record_type if mock_data.record_type else "Claim",
-            "documents": [
-                {
-                    "document_id": doc.document_id if doc.document_id else f"doc_{i}",
-                    "name": doc.name if doc.name else "unknown.pdf",
-                    "url": doc.url if doc.url else "",
-                    "type": doc.type if doc.type else "application/pdf",
-                    "indexed": doc.indexed if doc.indexed is not None else True
-                }
-                for i, doc in enumerate(mock_data.documents or [], 1)
-            ],
-            "fields_to_fill": [
-                {
-                    "field_name": field.field_name if field.field_name else f"field_{i}",
-                    "field_type": field.field_type if field.field_type else "text",
-                    "value": field.value if field.value is not None else None,
-                    "required": field.required if field.required is not None else True,
-                    "label": field.label if field.label else field.field_name if field.field_name else f"Field {i}"
-                }
-                for i, field in enumerate(mock_data.fields_to_fill or [], 1)
-            ]
-        }
+        # Use new format with "fields" instead of "fields_to_fill"
+        # Convert to dict using new format method
+        if mock_data.fields:
+            # New format available
+            response_data = mock_data.to_dict_new_format()
+            fields_count = len(mock_data.fields)
+        elif mock_data.fields_to_fill:
+            # Fallback to old format if new format not available
+            response_data = mock_data.to_dict_old_format()
+            fields_count = len(mock_data.fields_to_fill)
+        else:
+            # No fields at all
+            response_data = {
+                "record_id": mock_data.record_id if mock_data.record_id else record_id,
+                "record_type": mock_data.record_type if mock_data.record_type else "Claim",
+                "documents": [
+                    {
+                        "document_id": doc.document_id if doc.document_id else f"doc_{i}",
+                        "name": doc.name if doc.name else "unknown.pdf",
+                        "url": doc.url if doc.url else "",
+                        "type": doc.type if doc.type else "application/pdf",
+                        "indexed": doc.indexed if doc.indexed is not None else True
+                    }
+                    for i, doc in enumerate(mock_data.documents or [], 1)
+                ],
+                "fields": []
+            }
+            fields_count = 0
         
         # Log success
         safe_log(
@@ -181,7 +184,8 @@ async def get_record_data(request: GetRecordDataRequest) -> JSONResponse:
             "Record data retrieved successfully",
             record_id=record_id,
             documents_count=len(response_data.get("documents", [])),
-            fields_count=len(response_data.get("fields_to_fill", []))
+            fields_count=fields_count,
+            format="new" if "fields" in response_data else "old"
         )
         
         return JSONResponse(
