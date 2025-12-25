@@ -20,22 +20,35 @@ try {
         throw "Python not found"
     }
     
-    $versionMatch = $pythonVersion -match "Python (\d+)\.(\d+)"
+    $versionMatch = $pythonVersion -match "Python (\d+)\.(\d+)(?:\.(\d+))?"
     if (-not $versionMatch) {
         throw "Could not parse Python version"
     }
     
     $majorVersion = [int]$matches[1]
     $minorVersion = [int]$matches[2]
+    $patchVersion = if ($matches[3]) { [int]$matches[3] } else { 0 }
     
-    if ($majorVersion -lt 3 -or ($majorVersion -eq 3 -and $minorVersion -lt 11)) {
-        Write-Host "❌ Python 3.11+ required. Found: $pythonVersion" -ForegroundColor Red
+    # Check if version is 3.10.9+ or 3.11+
+    $isValid = $false
+    if ($majorVersion -gt 3) {
+        $isValid = $true
+    } elseif ($majorVersion -eq 3) {
+        if ($minorVersion -gt 10) {
+            $isValid = $true
+        } elseif ($minorVersion -eq 10 -and $patchVersion -ge 9) {
+            $isValid = $true
+        }
+    }
+    
+    if (-not $isValid) {
+        Write-Host "❌ Python 3.10.9+ required. Found: $pythonVersion" -ForegroundColor Red
         exit 1
     }
     
     Write-Host "✅ $pythonVersion found" -ForegroundColor Green
 } catch {
-    Write-Host "❌ Python not found. Please install Python 3.11 or higher." -ForegroundColor Red
+    Write-Host "❌ Python not found. Please install Python 3.10.9 or higher." -ForegroundColor Red
     Write-Host "   Download from: https://www.python.org/downloads/" -ForegroundColor Yellow
     exit 1
 }
@@ -84,37 +97,36 @@ function Setup-ServiceVenv {
         Write-Host "  Virtual environment already exists, skipping creation" -ForegroundColor Yellow
     }
     
-    # Activate venv and install requirements
+    # Install requirements using venv Python directly
     Write-Host "  Installing requirements..." -ForegroundColor Yellow
-    $ActivateScript = Join-Path $VenvDir "Scripts\Activate.ps1"
     
-    if (-not (Test-Path $ActivateScript)) {
-        Write-Host "  ❌ Activation script not found: $ActivateScript" -ForegroundColor Red
+    # Use venv Python directly (no need to activate)
+    $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+    
+    if (-not (Test-Path $VenvPython)) {
+        Write-Host "  ❌ Python not found in venv: $VenvPython" -ForegroundColor Red
         return $false
     }
     
-    # Activate venv
-    & $ActivateScript
+    # Upgrade pip using venv Python
+    & $VenvPython -m pip install --upgrade pip --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  ❌ Failed to upgrade pip" -ForegroundColor Red
+        return $false
+    }
     
-    # Upgrade pip
-    python -m pip install --upgrade pip --quiet
-    
-    # Install requirements
+    # Install requirements using venv Python
     $RequirementsFile = Join-Path $ServiceDir "requirements.txt"
     if (Test-Path $RequirementsFile) {
-        pip install -r $RequirementsFile
+        & $VenvPython -m pip install -r $RequirementsFile
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  ❌ Failed to install requirements" -ForegroundColor Red
-            deactivate
             return $false
         }
         Write-Host "  ✅ Requirements installed" -ForegroundColor Green
     } else {
         Write-Host "  ⚠️  No requirements.txt found" -ForegroundColor Yellow
     }
-    
-    # Deactivate venv
-    deactivate
     
     Write-Host "✅ $Service setup complete" -ForegroundColor Green
     Write-Host ""

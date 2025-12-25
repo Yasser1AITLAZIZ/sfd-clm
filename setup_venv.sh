@@ -24,15 +24,31 @@ echo ""
 echo -e "${YELLOW}Checking Python version...${NC}"
 PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}' || echo "not found")
 if [ "$PYTHON_VERSION" = "not found" ]; then
-    echo -e "${RED}❌ Python 3 not found. Please install Python 3.11 or higher.${NC}"
+    echo -e "${RED}❌ Python 3 not found. Please install Python 3.10.9 or higher.${NC}"
     exit 1
 fi
 
 PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
 PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+PYTHON_PATCH=$(echo $PYTHON_VERSION | cut -d. -f3)
 
-if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]); then
-    echo -e "${RED}❌ Python 3.11+ required. Found: $PYTHON_VERSION${NC}"
+# Check if version is 3.10.9+ or 3.11+
+IS_VALID=false
+if [ "$PYTHON_MAJOR" -gt 3 ]; then
+    IS_VALID=true
+elif [ "$PYTHON_MAJOR" -eq 3 ]; then
+    if [ "$PYTHON_MINOR" -gt 10 ]; then
+        IS_VALID=true
+    elif [ "$PYTHON_MINOR" -eq 10 ]; then
+        # Check patch version for 3.10.x (must be >= 9)
+        if [ -n "$PYTHON_PATCH" ] && [ "$PYTHON_PATCH" -ge 9 ]; then
+            IS_VALID=true
+        fi
+    fi
+fi
+
+if [ "$IS_VALID" = false ]; then
+    echo -e "${RED}❌ Python 3.10.9+ required. Found: $PYTHON_VERSION${NC}"
     exit 1
 fi
 
