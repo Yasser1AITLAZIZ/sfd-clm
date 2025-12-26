@@ -125,10 +125,27 @@ class SessionStorage:
             # Store in Redis with TTL
             key = self._get_key(session_id)
             try:
+                # Serialize session data to JSON first
+                try:
+                    session_json = json.dumps(session_data)
+                except (TypeError, ValueError) as json_error:
+                    safe_log(
+                        logger,
+                        logging.ERROR,
+                        "JSON serialization error in create_session",
+                        session_id=session_id,
+                        record_id=record_id,
+                        error_type=type(json_error).__name__,
+                        error_message=str(json_error) if json_error else "Unknown",
+                        traceback=traceback.format_exc()
+                    )
+                    raise SessionStorageError(f"Failed to serialize session data to JSON: {json_error}") from json_error
+                
+                # Store in Redis
                 self.redis_client.setex(
                     key,
                     self.default_ttl,
-                    json.dumps(session_data)
+                    session_json
                 )
             except (ConnectionError, TimeoutError) as e:
 

@@ -73,7 +73,7 @@ class SessionManager:
             
             # Create initial context
             context = {
-                "salesforce_data": salesforce_data.model_dump(),
+                "salesforce_data": salesforce_data.model_dump(mode='json'),
                 "conversation_history": [],
                 "extracted_data": {},
                 "metadata": {
