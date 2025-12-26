@@ -2,29 +2,16 @@
 
 ## 🎯 Démarrage Rapide (3 étapes)
 
-### Étape 1 : Démarrer Redis
+### Étape 1 : Vérifier SQLite
 
-**Option A : Si Redis est installé comme service Windows**
-- Redis démarre automatiquement ✅
+SQLite est inclus dans Python, aucune installation supplémentaire n'est requise.
 
-**Option B : Démarrer Redis manuellement**
-1. Ouvrir un terminal PowerShell ou CMD
-2. Naviguer vers le dossier d'installation de Redis (généralement `C:\Program Files\Redis`)
-3. Lancer :
-   ```powershell
-   redis-server.exe
-   ```
-   OU si Redis est dans le PATH :
-   ```powershell
-   redis-server
-   ```
-4. Laisser cette fenêtre ouverte
-
-**Vérifier que Redis fonctionne :**
+**Vérifier que Python est installé :**
 ```powershell
-redis-cli ping
+python --version
 ```
-Devrait répondre : `PONG`
+
+Le répertoire `backend-mcp/data/` sera créé automatiquement au premier démarrage du service.
 
 ---
 
@@ -149,11 +136,11 @@ taskkill /PID <PID> /F
 
 ## 🔧 Dépannage Windows
 
-### Erreur : "redis-cli n'est pas reconnu"
+### Erreur : "Erreur de base de données SQLite"
 **Solution :**
-1. Télécharger Redis pour Windows : https://github.com/microsoftarchive/redis/releases
-2. Extraire dans `C:\Redis`
-3. Ajouter `C:\Redis` au PATH système
+1. Vérifier que le répertoire `backend-mcp/data/` existe et est accessible en écriture
+2. Vérifier le chemin de la base de données dans la configuration (`SESSION_DB_PATH`)
+3. Le répertoire `data/` sera créé automatiquement si nécessaire
 4. Redémarrer PowerShell
 
 ### Erreur : "uvicorn n'est pas reconnu"
@@ -191,7 +178,7 @@ taskkill /PID <PID> /F
 
 Avant de lancer les tests, vérifier :
 
-- [ ] Redis est démarré et répond (`redis-cli ping` → `PONG`)
+- [ ] SQLite est disponible (inclus dans Python, aucune action requise)
 - [ ] Les ports 8000 et 8001 sont libres
 - [ ] Les dépendances sont installées (`pip install -r requirements.txt`)
 - [ ] Les services démarrent sans erreur

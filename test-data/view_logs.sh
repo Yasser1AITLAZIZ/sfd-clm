@@ -51,7 +51,7 @@ done
 # Get log files
 if [ "$SERVICE" = "all" ]; then
     if [ "$INCLUDE_STDERR" = true ]; then
-        FILES="$LOGS_DIR/*.log"
+    FILES="$LOGS_DIR/*.log"
     else
         FILES=$(ls "$LOGS_DIR"/*.log 2>/dev/null | grep -v "\.stderr\.log$")
     fi

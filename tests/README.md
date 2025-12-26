@@ -22,10 +22,7 @@ This directory contains end-to-end tests for the OptiClaims pipeline.
    uvicorn app.main:app --port 8000 --reload
    ```
 
-3. **Ensure Redis is running** (for session storage):
-   ```bash
-   redis-server
-   ```
+3. **SQLite session storage** : Le répertoire `backend-mcp/data/` sera créé automatiquement au premier démarrage
 
 ## Running Tests
 
@@ -79,7 +76,7 @@ The E2E test covers:
 
 All tests should pass if:
 - Both services are running
-- Redis is available
+- SQLite database directory is accessible (backend-mcp/data/)
 - Mock data is properly configured
 
 ## Test Results
@@ -92,9 +89,9 @@ Test results are saved to `test_results.json` with detailed information about ea
 - Check if services are listening on correct ports (8000, 8001)
 - Verify no firewall blocking the ports
 
-### Redis connection errors
-- Ensure Redis is running: `redis-cli ping` should return `PONG`
-- Check Redis URL in configuration
+### SQLite database errors
+- Ensure the `backend-mcp/data/` directory exists and is writable
+- Check `SESSION_DB_PATH` in configuration
 
 ### Test failures
 - Check service logs for detailed error messages

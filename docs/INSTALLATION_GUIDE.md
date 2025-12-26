@@ -44,29 +44,9 @@ python --version
   Téléchargez depuis [python.org](https://www.python.org/downloads/)
   - ✅ Cochez "Add Python to PATH" lors de l'installation
 
-### Redis (Recommandé)
+### Session Storage (SQLite)
 
-Redis est utilisé pour le stockage de session. Il est optionnel pour les tests basiques mais recommandé pour le fonctionnement complet.
-
-#### Linux (Ubuntu/Debian)
-
-```bash
-sudo apt update
-sudo apt install redis-server
-sudo systemctl start redis-server
-sudo systemctl enable redis-server
-```
-
-#### Mac
-
-```bash
-brew install redis
-brew services start redis
-```
-
-#### Windows
-
-Voir [INSTALL_REDIS_WINDOWS.md](INSTALL_REDIS_WINDOWS.md) pour les instructions détaillées.
+Le stockage de session utilise SQLite, qui est inclus dans Python. Aucune installation supplémentaire n'est requise. Le répertoire `data/` sera créé automatiquement au premier démarrage.
 
 ### Git (Optionnel)
 
@@ -95,7 +75,7 @@ Le script va :
 - ✅ Vérifier Python 3.11+
 - ✅ Créer les environnements virtuels pour chaque service
 - ✅ Installer toutes les dépendances
-- ✅ Vérifier Redis
+- ✅ Préparer le répertoire SQLite pour le stockage de session
 
 ### Windows (PowerShell)
 
@@ -196,8 +176,8 @@ PORT=8000
 MOCK_SALESFORCE_URL=http://localhost:8001
 SALESFORCE_REQUEST_TIMEOUT=5.0
 
-# Redis
-REDIS_URL=redis://localhost:6379/0
+# Session Storage (SQLite)
+SESSION_DB_PATH=data/sessions.db
 SESSION_TTL_SECONDS=86400
 
 # LangGraph
@@ -220,29 +200,6 @@ PORT=8002
 # API Keys (si nécessaire)
 # OPENAI_API_KEY=your_key_here
 # ANTHROPIC_API_KEY=your_key_here
-```
-
-### Configuration Redis
-
-#### Vérifier que Redis fonctionne
-
-```bash
-redis-cli ping
-# Devrait répondre: PONG
-```
-
-#### Configuration Redis (optionnel)
-
-Éditez `/etc/redis/redis.conf` (Linux) ou la configuration Windows :
-
-```conf
-# Port par défaut
-port 6379
-
-# Persistance
-save 900 1
-save 300 10
-save 60 10000
 ```
 
 ## Vérification
@@ -317,14 +274,14 @@ save 60 10000
 - Essayez avec `--no-cache-dir` : `pip install -r requirements.txt --no-cache-dir`
 - Vérifiez que vous êtes dans le bon venv
 
-### Problème : Redis non accessible
+### Problème : Erreur de base de données SQLite
 
-**Symptôme** : `ConnectionError: Error connecting to Redis`
+**Symptôme** : `Failed to initialize SQLite database`
 
 **Solution** :
-- Vérifiez que Redis est démarré : `redis-cli ping`
-- Vérifiez l'URL Redis dans `.env`
-- Pour les tests basiques, Redis est optionnel (mais les sessions ne seront pas persistées)
+- Vérifiez que le répertoire `backend-mcp/data/` existe et est accessible en écriture
+- Vérifiez le chemin de la base de données dans `.env` (`SESSION_DB_PATH`)
+- Le répertoire `data/` sera créé automatiquement si nécessaire
 
 ### Problème : Port déjà utilisé
 

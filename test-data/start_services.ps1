@@ -5,24 +5,17 @@ Write-Host "Starting OptiClaims Services for Testing" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Check if Redis is running
-Write-Host "Checking Redis..." -ForegroundColor Yellow
-try {
-    $null = redis-cli ping 2>$null
-    Write-Host "[OK] Redis is running" -ForegroundColor Green
-} catch {
-    Write-Host "[WARNING] Redis is not running. Please start it manually." -ForegroundColor Yellow
-    Write-Host "           Run: redis-server" -ForegroundColor Yellow
-    Read-Host "Press Enter to continue anyway"
-}
-
-Write-Host ""
-
 # Create logs directory
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $LogsDir = Join-Path $ScriptDir "results\logs"
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
+
+# Create data directory for SQLite
+$DataDir = Join-Path $ProjectRoot "backend-mcp\data"
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+Write-Host "[OK] Data directory ready for SQLite" -ForegroundColor Green
+Write-Host ""
 
 # Check if venvs exist before starting services
 Write-Host "Checking virtual environments..." -ForegroundColor Yellow
@@ -221,6 +214,29 @@ Write-Host ""
 Write-Host "Starting Backend LangGraph service on port 8002..." -ForegroundColor Yellow
 $LangGraphDir = Join-Path $ProjectRoot "backend-langgraph"
 $LangGraphLog = Join-Path $LogsDir "backend-langgraph.log"
+
+# Create .env file for LangGraph with MOCK_MODE enabled if it doesn't exist
+$LangGraphEnvFile = Join-Path $LangGraphDir ".env"
+if (-not (Test-Path $LangGraphEnvFile)) {
+    Write-Host "  Creating .env file with MOCK_MODE=true for testing..." -ForegroundColor Yellow
+    @"
+# Backend LangGraph Configuration (Auto-generated for testing)
+LOG_LEVEL=INFO
+DEBUG=false
+HOST=0.0.0.0
+PORT=8002
+MOCK_MODE=true
+"@ | Out-File -FilePath $LangGraphEnvFile -Encoding utf8
+    Write-Host "  ✅ .env file created with MOCK_MODE=true" -ForegroundColor Green
+} else {
+    # Check if MOCK_MODE is set, if not add it
+    $envContent = Get-Content $LangGraphEnvFile -Raw
+    if ($envContent -notmatch "MOCK_MODE") {
+        Write-Host "  Adding MOCK_MODE=true to existing .env file..." -ForegroundColor Yellow
+        Add-Content -Path $LangGraphEnvFile -Value "`nMOCK_MODE=true" -Encoding utf8
+        Write-Host "  ✅ MOCK_MODE=true added to .env file" -ForegroundColor Green
+    }
+}
 
 # Check if port is available
 if (-not (Test-PortAvailable -Port 8002)) {

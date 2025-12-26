@@ -6,27 +6,15 @@ echo "Starting OptiClaims Services for Testing"
 echo "=========================================="
 echo ""
 
-# Check if Redis is running
-echo "Checking Redis..."
-if redis-cli ping > /dev/null 2>&1; then
-    echo "✅ Redis is running"
-else
-    echo "⚠️  Redis is not running. Starting Redis..."
-    redis-server --daemonize yes
-    sleep 2
-    if redis-cli ping > /dev/null 2>&1; then
-        echo "✅ Redis started successfully"
-    else
-        echo "❌ Failed to start Redis. Please start it manually."
-        exit 1
-    fi
-fi
-
-echo ""
-
 # Create logs directory
 LOGS_DIR="$(dirname "$0")/results/logs"
 mkdir -p "$LOGS_DIR"
+
+# Create data directory for SQLite
+DATA_DIR="$(dirname "$0")/../backend-mcp/data"
+mkdir -p "$DATA_DIR"
+echo "✅ Data directory ready for SQLite"
+echo ""
 
 # Start Mock Salesforce service
 echo "Starting Mock Salesforce service on port 8001..."
@@ -68,7 +56,32 @@ echo ""
 
 # Start Backend LangGraph service
 echo "Starting Backend LangGraph service on port 8002..."
-cd "$(dirname "$0")/../backend-langgraph" || exit 1
+LANGGRAPH_DIR="$(dirname "$0")/../backend-langgraph"
+cd "$LANGGRAPH_DIR" || exit 1
+
+# Create .env file for LangGraph with MOCK_MODE enabled if it doesn't exist
+LANGGRAPH_ENV_FILE="$LANGGRAPH_DIR/.env"
+if [ ! -f "$LANGGRAPH_ENV_FILE" ]; then
+    echo "  Creating .env file with MOCK_MODE=true for testing..."
+    cat > "$LANGGRAPH_ENV_FILE" << EOF
+# Backend LangGraph Configuration (Auto-generated for testing)
+LOG_LEVEL=INFO
+DEBUG=false
+HOST=0.0.0.0
+PORT=8002
+MOCK_MODE=true
+EOF
+    echo "  ✅ .env file created with MOCK_MODE=true"
+else
+    # Check if MOCK_MODE is set, if not add it
+    if ! grep -q "MOCK_MODE" "$LANGGRAPH_ENV_FILE"; then
+        echo "  Adding MOCK_MODE=true to existing .env file..."
+        echo "" >> "$LANGGRAPH_ENV_FILE"
+        echo "MOCK_MODE=true" >> "$LANGGRAPH_ENV_FILE"
+        echo "  ✅ MOCK_MODE=true added to .env file"
+    fi
+fi
+
 uvicorn app.main:app --port 8002 --reload > "$LOGS_DIR/backend-langgraph.log" 2>&1 &
 LANGGRAPH_PID=$!
 cd - > /dev/null || exit 1

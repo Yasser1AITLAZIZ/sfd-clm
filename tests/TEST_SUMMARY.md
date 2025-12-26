@@ -27,7 +27,7 @@ This test suite validates the complete OptiClaims pipeline from steps 3 to 7, in
 
 ### 2. `test_pipeline_e2e.py`
 **Purpose:** Complete end-to-end test with detailed results
-**Requirements:** Both services running, Redis available
+**Requirements:** Both services running, SQLite database accessible
 **Time:** ~30 seconds
 **Best for:** Full validation before deployment
 
@@ -178,10 +178,10 @@ The tests use fake data from:
    - Verify services started correctly
    - Check service logs
 
-2. **Redis connection errors**
-   - Ensure Redis is running: `redis-cli ping`
-   - Check Redis URL in configuration
-   - Verify Redis is accessible
+2. **SQLite database errors**
+   - Ensure the `backend-mcp/data/` directory exists and is writable
+   - Check `SESSION_DB_PATH` in configuration
+   - Verify SQLite is accessible (included in Python)
 
 3. **Import errors**
    - Run from project root directory
@@ -225,7 +225,7 @@ After successful tests:
 ## Notes
 
 - Tests use fake/mock data - no real Salesforce connection needed
-- Redis is required for session storage tests
+- SQLite is used for session storage (included in Python)
 - Langgraph backend integration tests will be added in Step 8
 - All tests include defensive error handling and logging
 

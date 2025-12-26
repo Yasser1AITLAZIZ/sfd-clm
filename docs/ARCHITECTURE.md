@@ -11,7 +11,7 @@ OptiClaims est un système de traitement intelligent de sinistres qui utilise l'
 1. **Backend MCP** : Orchestration du workflow, gestion des sessions, communication avec Salesforce
 2. **Backend LangGraph** : Agent GenAI pour l'extraction de données depuis documents
 3. **Mock Salesforce** : Service de simulation pour les tests
-4. **Redis** : Stockage de session et cache
+4. **SQLite** : Stockage de session (fichier `data/sessions.db`)
 
 ## Architecture des Services
 
@@ -28,7 +28,7 @@ graph TB
     end
     
     subgraph Storage["Storage"]
-        REDIS[("Redis (Port 6379)")]
+        SQLITE[("SQLite (data/sessions.db)")]
     end
     
     subgraph External["External"]
@@ -38,14 +38,14 @@ graph TB
     SF -->|"HTTP POST"| MCP
     MCP -->|"HTTP POST"| MSF
     MCP -->|"HTTP POST"| LG
-    MCP <-->|"Session Storage"| REDIS
+    MCP <-->|"Session Storage"| SQLITE
     LG -->|"API Calls"| LLM
     
     style SF fill:#e1f5ff
     style MCP fill:#fff4e1
     style LG fill:#ffe1e1
     style MSF fill:#e1ffe1
-    style REDIS fill:#f0e1ff
+    style SQLITE fill:#f0e1ff
 ```
 
 ## Flux de Données Principal
@@ -57,7 +57,7 @@ sequenceDiagram
     participant SF as Salesforce
     participant MCP as BackendMCP
     participant Router as SessionRouter
-    participant Storage as Redis
+    participant Storage as SQLiteStorage
     participant MSF as MockSalesforce
     participant Preproc as Preprocessing
     participant Prompt as PromptBuilder
@@ -101,7 +101,7 @@ sequenceDiagram
     participant SF as Salesforce
     participant MCP as BackendMCP
     participant Router as SessionRouter
-    participant Storage as Redis
+    participant Storage as SQLiteStorage
     participant Prompt as PromptBuilder
     participant LG as LangGraph
     
@@ -161,7 +161,7 @@ flowchart TD
 
 #### Étape 1: Validation & Routing
 - Validation des paramètres d'entrée (record_id, session_id, user_message)
-- Vérification de l'existence de la session dans Redis
+- Vérification de l'existence de la session dans SQLite
 - Décision : Initialization ou Continuation
 - Récupération des données Salesforce si nouvelle session
 
@@ -234,11 +234,24 @@ flowchart LR
 
 ## Gestion des Sessions
 
-### Structure de Session dans Redis
+### Structure de Session dans SQLite
 
+Les sessions sont stockées dans une table SQLite `sessions` avec les colonnes suivantes :
+
+```sql
+CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY,
+    record_id TEXT NOT NULL,
+    data TEXT NOT NULL,  -- JSON encodé
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+)
 ```
-Key: session:{session_id}
-Value: {
+
+Structure JSON des données de session :
+```json
+{
     "record_id": "001XX000001",
     "created_at": "2024-01-15T10:30:00Z",
     "updated_at": "2024-01-15T10:35:00Z",
@@ -258,7 +271,7 @@ Value: {
 stateDiagram-v2
     [*] --> Created: POST /api/mcp/receive-request
     Note right of Created: session_id: null
-    Created --> Active: Session stored in Redis
+    Created --> Active: Session stored in SQLite
     Active --> Updated: Subsequent requests
     Updated --> Active: Continue processing
     Active --> Expired: TTL exceeded
@@ -349,7 +362,7 @@ Le système supporte deux formats de logs :
 ### Points d'Attention
 
 - Les clés API doivent être stockées dans des variables d'environnement
-- Redis doit être configuré avec authentification en production
+- SQLite est inclus dans Python, aucune configuration supplémentaire requise
 - Les documents PDF peuvent être volumineux (limite de taille recommandée)
 
 ## Performance
@@ -357,7 +370,7 @@ Le système supporte deux formats de logs :
 ### Optimisations
 
 1. **Réutilisation des Messages MCP** : Formatage une seule fois
-2. **Cache de Session** : Sessions stockées dans Redis
+2. **Cache de Session** : Sessions stockées dans SQLite
 3. **Traitement Asynchrone** : Utilisation d'async/await
 4. **Retries Intelligents** : Backoff exponentiel pour les erreurs temporaires
 
@@ -378,13 +391,13 @@ Le système supporte deux formats de logs :
 ### Architecture Scalable
 
 - **Services Déployables Indépendamment** : Chaque service peut être mis à l'échelle séparément
-- **Redis pour le Partage d'État** : Permet le scaling horizontal
-- **Stateless Services** : Les services sont stateless (sauf Redis)
+- **SQLite pour le Stockage de Session** : Solution simple et efficace pour le développement
+- **Stateless Services** : Les services sont stateless (sauf SQLite pour les sessions)
 
 ### Recommandations pour la Production
 
 1. **Load Balancer** : Devant chaque service
-2. **Redis Cluster** : Pour haute disponibilité
+2. **Base de Données Production** : Pour la production, considérer PostgreSQL ou une base de données partagée pour le scaling horizontal
 3. **Monitoring** : APM (Application Performance Monitoring)
 4. **Logging Centralisé** : ELK Stack ou équivalent
 5. **Rate Limiting** : Pour protéger les APIs

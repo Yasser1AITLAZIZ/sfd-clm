@@ -138,19 +138,15 @@ foreach ($service in $Services) {
     Setup-ServiceVenv -Service $service
 }
 
-# Check Redis (optional but recommended)
-Write-Host "Checking Redis..." -ForegroundColor Yellow
+# Create data directory for SQLite (session storage)
+Write-Host "Preparing SQLite session storage..." -ForegroundColor Yellow
+$DataDir = Join-Path $ScriptDir "backend-mcp\data"
 try {
-    $null = redis-cli ping 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Redis is running" -ForegroundColor Green
-    } else {
-        Write-Host "⚠️  Redis is installed but not running" -ForegroundColor Yellow
-        Write-Host "   Start Redis with: redis-server" -ForegroundColor Yellow
-    }
+    New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+    Write-Host "✅ Data directory ready for SQLite" -ForegroundColor Green
 } catch {
-    Write-Host "⚠️  Redis not found. It's required for session storage." -ForegroundColor Yellow
-    Write-Host "   See docs/INSTALL_REDIS_WINDOWS.md for installation instructions" -ForegroundColor Yellow
+    Write-Host "⚠️  Could not create data directory: $DataDir" -ForegroundColor Yellow
+    Write-Host "   It will be created automatically on first service start" -ForegroundColor Yellow
 }
 Write-Host ""
 

@@ -485,6 +485,14 @@ class WorkflowOrchestrator:
                     )
                 
                 mcp_response = await self.mcp_sender.send_to_langgraph(mcp_message, async_mode=False)
+                # #region agent log
+                import json as json_lib
+                import time
+                try:
+                    with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                        f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_mcp_response_received","timestamp":int(time.time()*1000),"location":"workflow_orchestrator.py:487","message":"MCP response received in workflow","data":{"has_extracted_data":hasattr(mcp_response,'extracted_data'),"extracted_data_count":len(mcp_response.extracted_data) if hasattr(mcp_response,'extracted_data') else 0,"extracted_data_keys":list(mcp_response.extracted_data.keys()) if hasattr(mcp_response,'extracted_data') and mcp_response.extracted_data else [],"status":mcp_response.status if hasattr(mcp_response,'status') else "unknown"},"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}) + "\n")
+                except: pass
+                # #endregion
                 
                 workflow_state["data"]["mcp_sending"] = {
                     "status": "completed",
@@ -494,6 +502,12 @@ class WorkflowOrchestrator:
                         "status": mcp_response.status if hasattr(mcp_response, 'status') else "unknown"
                     }
                 }
+                # #region agent log
+                try:
+                    with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                        f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_workflow_state_updated","timestamp":int(time.time()*1000),"location":"workflow_orchestrator.py:496","message":"Workflow state updated with mcp_response","data":{"mcp_response_extracted_data_count":len(workflow_state["data"]["mcp_sending"]["mcp_response"].get("extracted_data",{}))},"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}) + "\n")
+                except: pass
+                # #endregion
                 workflow_state["steps_completed"].append("mcp_sending")
                 step_elapsed = time.time() - step_start_time
                 log_timing(

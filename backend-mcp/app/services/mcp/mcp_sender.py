@@ -120,6 +120,15 @@ class MCPSender:
                         
                 except httpx.HTTPStatusError as e:
                     status_code = e.response.status_code if e.response else 0
+                    # #region agent log
+                    import json as json_lib
+                    import time
+                    try:
+                        response_text = e.response.text if e.response else "No response"
+                        with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                            f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_http_error","timestamp":int(time.time()*1000),"location":"mcp_sender.py:121","message":"HTTP error from LangGraph","data":{"status_code":status_code,"response_text":response_text[:500]},"sessionId":"debug-session","runId":"run1","hypothesisId":"E"}) + "\n")
+                    except: pass
+                    # #endregion
                     if status_code >= 500 and attempt < self.max_retries - 1:
                         # Server error, retry
                         delay = self.retry_delays[attempt]
@@ -141,6 +150,15 @@ class MCPSender:
             raise MCPError("Failed to send message after retries")
             
         except Exception as e:
+            # #region agent log
+            import json as json_lib
+            import time
+            import traceback
+            try:
+                with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_send_error","timestamp":int(time.time()*1000),"location":"mcp_sender.py:143","message":"Error sending to LangGraph","data":{"error_type":type(e).__name__,"error_message":str(e),"traceback":traceback.format_exc()},"sessionId":"debug-session","runId":"run1","hypothesisId":"E"}) + "\n")
+            except: pass
+            # #endregion
             safe_log(
                 logger,
                 logging.ERROR,
@@ -277,10 +295,33 @@ class MCPSender:
         # Convert fields dictionary
         fields_dictionary = {}
         context_fields = mcp_message.context.get("fields", []) if mcp_message.context else []
+        # #region agent log
+        import json as json_lib
+        import time
+        try:
+            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_before_fields_conv","timestamp":int(time.time()*1000),"location":"mcp_sender.py:277","message":"Before fields conversion","data":{"context_fields_count":len(context_fields),"first_field_sample":context_fields[0] if context_fields else None},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}) + "\n")
+        except: pass
+        # #endregion
         
-        for field in context_fields:
+        for i, field in enumerate(context_fields):
             if isinstance(field, dict):
-                field_name = field.get("field_name") or field.get("apiName") or "unknown"
+                # Generate unique field_name: use apiName, field_name, or create from label/index
+                field_name = field.get("field_name") or field.get("apiName")
+                if not field_name or field_name == "unknown":
+                    # Create field_name from label (sanitized) or use index
+                    label = field.get("label", "")
+                    if label:
+                        # Sanitize label to create valid field name
+                        import re
+                        field_name = re.sub(r'[^a-zA-Z0-9_]', '_', label.lower().strip())
+                        field_name = re.sub(r'_+', '_', field_name)  # Replace multiple underscores
+                        field_name = field_name.strip('_')  # Remove leading/trailing underscores
+                        if not field_name:
+                            field_name = f"field_{i+1}"
+                    else:
+                        field_name = f"field_{i+1}"
+                
                 fields_dictionary[field_name] = {
                     "label": field.get("label", field_name),
                     "type": field.get("field_type") or field.get("type", "text"),
@@ -288,6 +329,13 @@ class MCPSender:
                     "possibleValues": field.get("possibleValues", field.get("possible_values", [])),
                     "defaultValue": field.get("defaultValue") or field.get("default_value")
                 }
+        
+        # #region agent log
+        try:
+            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_after_fields_conv","timestamp":int(time.time()*1000),"location":"mcp_sender.py:299","message":"After fields conversion","data":{"fields_dict_keys":list(fields_dictionary.keys()),"fields_dict_count":len(fields_dictionary)},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}) + "\n")
+        except: pass
+        # #endregion
         
         # Build request body
         request_body = {
@@ -325,6 +373,14 @@ class MCPSender:
         try:
             # Parse JSON response
             response_data = response.json()
+            # #region agent log
+            import json as json_lib
+            import time
+            try:
+                with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_response_received","timestamp":int(time.time()*1000),"location":"mcp_sender.py:342","message":"LangGraph response received","data":{"response_status":response_data.get("status"),"has_data":("data" in response_data),"data_keys":list(response_data.get("data",{}).keys()) if "data" in response_data else []},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}) + "\n")
+            except: pass
+            # #endregion
             
             # Extract data from response structure: {"status": "success", "data": {...}}
             if response_data.get("status") == "success" and "data" in response_data:
@@ -332,6 +388,12 @@ class MCPSender:
                 extracted_data = data.get("extracted_data", {})
                 confidence_scores = data.get("confidence_scores", {})
                 quality_score = data.get("quality_score")
+                # #region agent log
+                try:
+                    with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                        f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_data_extracted","timestamp":int(time.time()*1000),"location":"mcp_sender.py:348","message":"Data extracted from response","data":{"extracted_data_keys":list(extracted_data.keys()),"extracted_data_count":len(extracted_data),"confidence_scores_count":len(confidence_scores)},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}) + "\n")
+                except: pass
+                # #endregion
             else:
                 # Fallback: try to parse as LanggraphResponseSchema directly
                 try:
@@ -352,6 +414,12 @@ class MCPSender:
                 confidence_scores=confidence_scores,
                 status="success"
             )
+            # #region agent log
+            try:
+                with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_mcp_response_built","timestamp":int(time.time()*1000),"location":"mcp_sender.py:364","message":"MCPResponseSchema built","data":{"extracted_data_count":len(mcp_response.extracted_data),"confidence_scores_count":len(mcp_response.confidence_scores),"status":mcp_response.status},"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}) + "\n")
+            except: pass
+            # #endregion
             
             safe_log(
                 logger,

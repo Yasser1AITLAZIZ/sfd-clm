@@ -29,7 +29,7 @@ sequenceDiagram
     participant MCP as Backend MCP
     participant MSF as Mock Salesforce
     participant LG as Backend LangGraph
-    participant Redis as Redis Storage
+    participant SQLITE as SQLite Storage
     
     SF->>MCP: POST /api/mcp/receive-request
     MCP->>MCP: Validate & Route
@@ -42,7 +42,7 @@ sequenceDiagram
     MCP->>LG: POST /api/langgraph/process-mcp-request
     LG->>LG: OCR + Extraction
     LG-->>MCP: Extracted Data
-    MCP->>Redis: Store/Update Session
+    MCP->>SQLITE: Store/Update Session
     MCP-->>SF: Workflow Result
 ```
 
@@ -811,6 +811,6 @@ curl -X POST http://localhost:8002/api/langgraph/process-mcp-request \
 ### Session TTL
 
 - **Durée par défaut** : 86400 secondes (24 heures)
-- **Stockage** : Redis
-- **Format clé** : `session:{session_id}`
+- **Stockage** : SQLite (table `sessions`)
+- **Format clé** : `session_id` (colonne PRIMARY KEY dans la table)
 

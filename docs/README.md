@@ -75,11 +75,6 @@ Ce dossier contient la documentation complète et à jour du pipeline OptiClaims
 
 **À consulter pour** : Tests, validation, exemples pratiques
 
-### [GUIDE_REDIS_WINDOWS.md](GUIDE_REDIS_WINDOWS.md) & [INSTALL_REDIS_WINDOWS.md](INSTALL_REDIS_WINDOWS.md)
-
-**Guides d'installation Redis pour Windows**
-
-**À consulter pour** : Installation Redis sur Windows
 
 ## 🚀 Navigation Rapide
 

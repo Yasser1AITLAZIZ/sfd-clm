@@ -764,7 +764,7 @@ curl -X POST http://localhost:8000/api/mcp/receive-request \
 #### Backend MCP
 - `BACKEND_MCP_PORT` : Port du service (défaut: 8000)
 - `MOCK_SALESFORCE_URL` : URL du service mock (défaut: http://localhost:8001)
-- `REDIS_URL` : URL Redis pour sessions (défaut: redis://localhost:6379)
+- `SESSION_DB_PATH` : Chemin vers la base de données SQLite (défaut: data/sessions.db)
 - `LANGGRAPH_URL` : URL du backend Langgraph (à configurer)
 - `LANGGRAPH_API_KEY` : Clé API Langgraph (à configurer)
 - `LOG_LEVEL` : Niveau de log (défaut: INFO)

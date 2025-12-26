@@ -28,7 +28,7 @@ def get_session_manager() -> SessionManager:
     if _session_manager is None:
         try:
             storage = SessionStorage(
-                redis_url=settings.redis_url,
+                db_path=settings.session_db_path,
                 default_ttl=settings.session_ttl_seconds
             )
             _session_manager = SessionManager(storage)
@@ -106,7 +106,8 @@ async def validate_and_route(
         # Route to appropriate flow
         if not session_exists:
             # New session - initialization flow
-            return await route_to_initialization(record_id, user_message)
+            result = await route_to_initialization(record_id, user_message)
+            return result
         else:
             # Existing session - continuation flow
             return route_to_continuation(session_id, user_message)

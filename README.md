@@ -111,7 +111,7 @@ sequenceDiagram
     participant SF as Salesforce
     participant MCP as BackendMCP
     participant Router as SessionRouter
-    participant Storage as RedisStorage
+    participant Storage as SQLiteStorage
     participant LangGraph as BackendLangGraph
     
     SF->>MCP: POST /api/mcp/receive-request
@@ -145,7 +145,7 @@ sequenceDiagram
 ### Prérequis
 
 - **Python 3.11+** : [Télécharger Python](https://www.python.org/downloads/)
-- **Redis** (recommandé pour le stockage de session) : [Installation Redis](https://redis.io/docs/getting-started/)
+- **SQLite** : Inclus dans Python (aucune installation requise)
 - **pip** : Inclus avec Python
 
 ### Installation Automatique (Recommandé)
@@ -171,7 +171,7 @@ Les scripts vont :
 1. Vérifier que Python 3.11+ est installé
 2. Créer un environnement virtuel (`venv`) pour chaque service
 3. Installer toutes les dépendances depuis `requirements.txt`
-4. Vérifier la présence de Redis
+4. Préparer le répertoire SQLite pour le stockage de session
 
 ### Installation Manuelle
 
@@ -239,7 +239,7 @@ Créez des fichiers `.env` dans chaque service si nécessaire :
 LOG_LEVEL=INFO
 LOG_FORMAT=console  # ou "json" pour logs structurés
 MOCK_SALESFORCE_URL=http://localhost:8001
-REDIS_URL=redis://localhost:6379/0
+SESSION_DB_PATH=data/sessions.db
 SESSION_TTL_SECONDS=86400
 LANGGRAPH_URL=http://localhost:8002
 LANGGRAPH_TIMEOUT=30.0
@@ -255,19 +255,9 @@ LOG_FORMAT=console
 # ANTHROPIC_API_KEY=your_key_here
 ```
 
-### Redis
+### Session Storage
 
-Redis est utilisé pour le stockage de session. Pour démarrer Redis :
-
-#### Linux / Mac
-
-```bash
-redis-server
-```
-
-#### Windows
-
-Voir [docs/INSTALL_REDIS_WINDOWS.md](docs/INSTALL_REDIS_WINDOWS.md) pour les instructions d'installation.
+Le stockage de session utilise SQLite, qui est inclus dans Python. Aucune installation ou démarrage supplémentaire n'est requis. Le répertoire `data/` sera créé automatiquement au premier démarrage.
 
 ## Démarrage des Services
 
@@ -416,7 +406,6 @@ Les logs incluent :
 
 - **[Documentation du Pipeline](docs/PIPELINE_DOCUMENTATION.md)** : Documentation exhaustive avec diagrammes, formats de données, et scénarios de test
 - **[Exemples de Test](docs/TEST_EXAMPLES.md)** : Exemples concrets et scripts prêts à l'emploi
-- **[Guide d'Installation Redis (Windows)](docs/INSTALL_REDIS_WINDOWS.md)** : Instructions détaillées pour Windows
 
 ## Dépannage
 
@@ -428,11 +417,11 @@ Les logs incluent :
 2. Vérifiez que les ports sont libres (8000, 8001, 8002)
 3. Vérifiez les logs dans la console
 
-#### Erreur de connexion Redis
+#### Erreur de base de données SQLite
 
-1. Vérifiez que Redis est démarré : `redis-cli ping`
-2. Vérifiez l'URL Redis dans la configuration
-3. Redis est optionnel pour les tests basiques mais requis pour les sessions
+1. Vérifiez que le répertoire `backend-mcp/data/` existe et est accessible en écriture
+2. Vérifiez le chemin de la base de données dans la configuration (`SESSION_DB_PATH`)
+3. Le répertoire `data/` sera créé automatiquement si nécessaire
 
 #### Erreurs d'import Python
 

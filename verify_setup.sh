@@ -59,19 +59,6 @@ for service in "${SERVICES[@]}"; do
     fi
 done
 
-# Check Redis
-echo -e "${YELLOW}Checking Redis...${NC}"
-if command -v redis-cli > /dev/null 2>&1; then
-    if redis-cli ping > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ Redis is running${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Redis is installed but not running${NC}"
-        echo -e "     Start with: redis-server"
-    fi
-else
-    echo -e "${YELLOW}⚠️  Redis not found (optional but recommended)${NC}"
-fi
-
 # Check test-data
 echo -e "${YELLOW}Checking test-data...${NC}"
 TEST_DATA_DIR="$SCRIPT_DIR/test-data"

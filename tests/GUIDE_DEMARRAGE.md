@@ -9,16 +9,12 @@
    cd C:\Users\YasserAITLAZIZ\sfd-clm
    ```
 
-2. **Vérifier que Redis est installé et démarré**
+2. **Vérifier que Python est installé** (SQLite est inclus dans Python)
    ```powershell
-   redis-cli ping
+   python --version
    ```
-   - Si ça répond `PONG` → Redis est démarré ✅
-   - Si erreur → Démarrer Redis manuellement :
-     ```powershell
-     redis-server
-     ```
-     (Laissez cette fenêtre ouverte)
+   - SQLite est inclus dans Python, aucune installation supplémentaire requise ✅
+   - Le répertoire `backend-mcp/data/` sera créé automatiquement au premier démarrage
 
 3. **Lancer le script de démarrage**
    ```powershell
@@ -54,10 +50,8 @@ cd C:\Users\YasserAITLAZIZ\sfd-clm\backend-mcp
 uvicorn app.main:app --port 8000 --reload
 ```
 
-#### Terminal 3 : Redis (si pas déjà démarré)
-```powershell
-redis-server
-```
+#### Terminal 3 : (Optionnel) Monitoring SQLite
+Le répertoire `backend-mcp/data/` sera créé automatiquement au premier démarrage.
 
 ---
 
@@ -77,21 +71,7 @@ chmod +x tests/start_services.sh
 
 ### Étape 3 : Vérifier les prérequis
 
-**3.1. Vérifier que Redis est installé**
-```bash
-redis-cli --version
-```
-- Si installé → vous verrez la version
-- Si non installé → installer Redis :
-  ```bash
-  # Ubuntu/Debian
-  sudo apt-get install redis-server
-  
-  # Mac (avec Homebrew)
-  brew install redis
-  ```
-
-**3.2. Vérifier que Python 3.11+ est installé**
+**3.1. Vérifier que Python 3.11+ est installé**
 ```bash
 python3 --version
 ```
@@ -122,8 +102,8 @@ Le script devrait afficher :
 Starting OptiClaims Services for Testing
 ==========================================
 
-Checking Redis...
-✅ Redis is running
+Checking SQLite...
+✅ SQLite is ready (included in Python)
 
 Starting Mock Salesforce service on port 8001...
 ✅ Mock Salesforce service started (PID: 12345)
@@ -163,10 +143,10 @@ Les deux devraient retourner un JSON avec `"status": "healthy"`
 chmod +x tests/start_services.sh
 ```
 
-### Problème : "redis-cli: command not found"
-- **Windows** : Installer Redis depuis https://redis.io/download
-- **Linux** : `sudo apt-get install redis-server`
-- **Mac** : `brew install redis`
+### Problème : "Erreur de base de données SQLite"
+- Vérifier que le répertoire `backend-mcp/data/` existe et est accessible en écriture
+- Vérifier le chemin de la base de données dans la configuration (`SESSION_DB_PATH`)
+- Le répertoire `data/` sera créé automatiquement si nécessaire
 
 ### Problème : "Port already in use"
 ```bash
@@ -197,7 +177,7 @@ pip install -r requirements.txt
 ### Problème : Services ne démarrent pas
 1. Vérifier les logs dans les terminaux
 2. Vérifier que les ports 8000 et 8001 sont libres
-3. Vérifier que Redis est accessible
+3. Vérifier que SQLite est accessible (le répertoire backend-mcp/data/ sera créé automatiquement)
 4. Vérifier les variables d'environnement si configurées
 
 ---
@@ -254,7 +234,7 @@ lsof -ti:8001 | xargs kill -9
 
 - **Ne fermez pas les terminaux** où les services tournent
 - Les services utilisent `--reload` donc ils redémarrent automatiquement si vous modifiez le code
-- Redis doit rester démarré pendant toute la session de test
+- SQLite est inclus dans Python, aucune action supplémentaire requise
 - Les ports 8000 et 8001 doivent être libres
 
 ---

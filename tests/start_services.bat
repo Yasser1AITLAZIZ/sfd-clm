@@ -6,18 +6,8 @@ echo Starting OptiClaims Services for Testing
 echo ==========================================
 echo.
 
-REM Check if Redis is running
-echo Checking Redis...
-redis-cli ping >nul 2>&1
-if %errorlevel% equ 0 (
-    echo [OK] Redis is running
-) else (
-    echo [WARNING] Redis is not running. Please start it manually.
-    echo           Run: redis-server
-    pause
-    exit /b 1
-)
-
+REM SQLite is included in Python, no additional setup needed
+echo [OK] SQLite session storage ready (backend-mcp/data/ will be created automatically)
 echo.
 
 REM Start Mock Salesforce service

@@ -39,8 +39,6 @@ Exemples pratiques, scripts de test, scénarios complets.
 
 ### Installation & Configuration
 - **[INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)** - Installation complète
-- **[GUIDE_REDIS_WINDOWS.md](GUIDE_REDIS_WINDOWS.md)** - Installation Redis Windows
-- **[INSTALL_REDIS_WINDOWS.md](INSTALL_REDIS_WINDOWS.md)** - Guide Redis Windows
 
 ### Tests & Exemples
 - **[TEST_EXAMPLES.md](TEST_EXAMPLES.md)** - Exemples de tests
@@ -118,9 +116,7 @@ docs/
 ├── ARCHITECTURE.md              ← Architecture système
 ├── INSTALLATION_GUIDE.md        ← Guide d'installation
 ├── PIPELINE_DOCUMENTATION.md   ← Documentation historique
-├── TEST_EXAMPLES.md             ← Exemples de tests
-├── GUIDE_REDIS_WINDOWS.md      ← Guide Redis Windows
-└── INSTALL_REDIS_WINDOWS.md    ← Installation Redis Windows
+└── TEST_EXAMPLES.md             ← Exemples de tests
 ```
 
 ## ✅ Documentation à Jour

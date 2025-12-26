@@ -114,20 +114,6 @@ for service in "${SERVICES[@]}"; do
     setup_service_venv "$service"
 done
 
-# Check Redis (optional but recommended)
-echo -e "${YELLOW}Checking Redis...${NC}"
-if command -v redis-cli > /dev/null 2>&1; then
-    if redis-cli ping > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ Redis is running${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Redis is installed but not running${NC}"
-        echo -e "   Start Redis with: redis-server"
-    fi
-else
-    echo -e "${YELLOW}⚠️  Redis not found. It's required for session storage.${NC}"
-    echo -e "   Install Redis: https://redis.io/docs/getting-started/"
-fi
-echo ""
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${GREEN}✅ Setup complete!${NC}"

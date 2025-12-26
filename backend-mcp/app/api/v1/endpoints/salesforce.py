@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from typing import Any, Dict, Optional
 import logging
+import traceback
 
 from app.models.schemas import (
     ReceiveRequestSchema,
@@ -300,7 +301,8 @@ async def receive_request(request: ReceiveRequestSchema, http_request: Request) 
             record_id=record_id or "unknown",
             session_id=session_id or "none",
             error_type=type(e).__name__,
-            error_message=str(e) if e else "Unknown error"
+            error_message=str(e) if e else "Unknown error",
+            traceback=traceback.format_exc()
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

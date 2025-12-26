@@ -2,9 +2,8 @@
 
 ## Prerequisites
 
-1. **Python 3.11+** installed
-2. **Redis** running (for session storage)
-3. **All dependencies** installed:
+1. **Python 3.11+** installed (SQLite is included)
+2. **All dependencies** installed:
    ```bash
    pip install -r requirements-dev.txt
    ```
@@ -36,8 +35,8 @@ uvicorn app.main:app --port 8001 --reload
 cd backend-mcp
 uvicorn app.main:app --port 8000 --reload
 
-# Terminal 3: Redis (if not running)
-redis-server
+# Terminal 3: (Optional) Monitor SQLite
+# The backend-mcp/data/ directory will be created automatically on first start
 ```
 
 **Option B: Using script (Unix/Linux/Mac)**
@@ -99,14 +98,13 @@ lsof -i :8001
 kill -9 <PID>
 ```
 
-### Redis connection error
+### SQLite database error
 ```bash
-# Check Redis
-redis-cli ping
-# Should return: PONG
+# Check that the data directory exists
+ls backend-mcp/data/
 
-# Start Redis if not running
-redis-server
+# The directory will be created automatically on first service start
+# If errors persist, check SESSION_DB_PATH in configuration
 ```
 
 ### Import errors

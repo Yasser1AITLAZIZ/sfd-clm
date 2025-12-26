@@ -2,12 +2,10 @@
 import pytest
 import json
 import sys
-from pathlib import Path
+import tempfile
 import os
+from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
-import redis
-from redis.exceptions import ConnectionError, TimeoutError, RedisError
 
 # Setup path for imports
 project_root = Path(__file__).parent.parent
@@ -28,34 +26,37 @@ class TestSessionStorage:
     """Test cases for SessionStorage"""
     
     @pytest.fixture
-    def mock_redis(self):
-        """Mock Redis client"""
-        with patch('backend_mcp.app.services.session_storage.redis.from_url') as mock_from_url:
-            mock_client = MagicMock()
-            mock_client.ping.return_value = True
-            mock_from_url.return_value = mock_client
-            yield mock_client
+    def temp_db(self):
+        """Create a temporary SQLite database file"""
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+            db_path = f.name
+        yield db_path
+        # Cleanup
+        if os.path.exists(db_path):
+            os.unlink(db_path)
     
     @pytest.fixture
-    def session_storage(self, mock_redis):
-        """Create SessionStorage instance with mocked Redis"""
-        return SessionStorage("redis://localhost:6379/0", default_ttl=3600)
+    def session_storage(self, temp_db):
+        """Create SessionStorage instance with temporary database"""
+        return SessionStorage(temp_db, default_ttl=3600)
     
-    def test_init_success(self, mock_redis):
+    def test_init_success(self, temp_db):
         """Test successful initialization"""
-        storage = SessionStorage("redis://localhost:6379/0", default_ttl=3600)
+        storage = SessionStorage(temp_db, default_ttl=3600)
         assert storage.default_ttl == 3600
-        assert storage.key_prefix == "session:"
-        mock_redis.ping.assert_called_once()
+        assert storage.db_path == temp_db
+        # Verify database was created
+        assert os.path.exists(temp_db)
     
-    def test_init_connection_error(self):
-        """Test initialization with connection error"""
-        with patch('backend_mcp.app.services.session_storage.redis.from_url') as mock_from_url:
-            mock_from_url.side_effect = ConnectionError("Connection failed")
-            with pytest.raises(SessionStorageError):
-                SessionStorage("redis://localhost:6379/0")
+    def test_init_creates_directory(self):
+        """Test that initialization creates directory if needed"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "subdir", "sessions.db")
+            storage = SessionStorage(db_path, default_ttl=3600)
+            assert os.path.exists(db_path)
+            assert os.path.isdir(os.path.dirname(db_path))
     
-    def test_create_session_success(self, session_storage, mock_redis):
+    def test_create_session_success(self, session_storage):
         """Test successful session creation"""
         record_id = "001XXXX"
         context = {"test": "data"}
@@ -64,13 +65,10 @@ class TestSessionStorage:
         
         assert session_id is not None
         assert len(session_id) == 36  # UUID v4 length
-        mock_redis.setex.assert_called_once()
         
-        # Verify call arguments
-        call_args = mock_redis.setex.call_args
-        assert call_args[0][0].startswith("session:")
-        assert call_args[0][1] == 3600  # TTL
-        session_data = json.loads(call_args[0][2])
+        # Verify session was stored
+        session_data = session_storage.get_session(session_id)
+        assert session_data is not None
         assert session_data["record_id"] == record_id
         assert session_data["context"] == context
     
@@ -84,38 +82,22 @@ class TestSessionStorage:
         with pytest.raises(SessionStorageError):
             session_storage.create_session("001XXXX", {})
     
-    def test_create_session_redis_error(self, session_storage, mock_redis):
-        """Test session creation with Redis error"""
-        mock_redis.setex.side_effect = ConnectionError("Connection failed")
-        with pytest.raises(SessionStorageError):
-            session_storage.create_session("001XXXX", {"test": "data"})
-    
-    def test_get_session_success(self, session_storage, mock_redis):
+    def test_get_session_success(self, session_storage):
         """Test successful session retrieval"""
-        session_id = "test-session-id"
-        session_data = {
-            "session_id": session_id,
-            "record_id": "001XXXX",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
-            "context": {"test": "data"}
-        }
-        mock_redis.get.return_value = json.dumps(session_data)
+        record_id = "001XXXX"
+        context = {"test": "data"}
         
+        session_id = session_storage.create_session(record_id, context)
         result = session_storage.get_session(session_id)
         
         assert result is not None
         assert result["session_id"] == session_id
-        assert result["record_id"] == "001XXXX"
-        mock_redis.get.assert_called_once_with("session:test-session-id")
+        assert result["record_id"] == record_id
+        assert result["context"] == context
     
-    def test_get_session_not_found(self, session_storage, mock_redis):
+    def test_get_session_not_found(self, session_storage):
         """Test session retrieval when not found"""
-        mock_redis.get.return_value = None
-        
-        result = session_storage.get_session("non-existent")
-        
+        result = session_storage.get_session("non-existent-session-id")
         assert result is None
     
     def test_get_session_empty_id(self, session_storage):
@@ -123,103 +105,164 @@ class TestSessionStorage:
         result = session_storage.get_session("")
         assert result is None
     
-    def test_get_session_redis_error(self, session_storage, mock_redis):
-        """Test session retrieval with Redis error"""
-        mock_redis.get.side_effect = ConnectionError("Connection failed")
-        result = session_storage.get_session("test-id")
-        assert result is None  # Should return None on error
-    
-    def test_update_session_success(self, session_storage, mock_redis):
-        """Test successful session update"""
-        session_id = "test-session-id"
-        existing_data = {
-            "session_id": session_id,
-            "record_id": "001XXXX",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
-            "context": {"test": "data"}
-        }
-        mock_redis.get.return_value = json.dumps(existing_data)
-        mock_redis.ttl.return_value = 1800
+    def test_get_session_expired(self, session_storage):
+        """Test session retrieval when expired"""
+        record_id = "001XXXX"
+        context = {"test": "data"}
         
-        updates = {"context": {"new": "value"}}
+        # Create session with very short TTL
+        session_id = session_storage.create_session(record_id, context)
+        
+        # Manually expire the session by updating expires_at
+        import sqlite3
+        with sqlite3.connect(session_storage.db_path) as conn:
+            conn.execute(
+                "UPDATE sessions SET expires_at = ? WHERE session_id = ?",
+                ((datetime.utcnow() - timedelta(seconds=1)).isoformat(), session_id)
+            )
+            conn.commit()
+        
+        # Should return None for expired session
+        result = session_storage.get_session(session_id)
+        assert result is None
+    
+    def test_update_session_success(self, session_storage):
+        """Test successful session update"""
+        record_id = "001XXXX"
+        context = {"test": "data"}
+        
+        session_id = session_storage.create_session(record_id, context)
+        
+        updates = {"context": {"new": "value", "test": "data"}}
         result = session_storage.update_session(session_id, updates)
         
         assert result is True
-        assert mock_redis.setex.called
+        
+        # Verify update
+        session_data = session_storage.get_session(session_id)
+        assert session_data["context"]["new"] == "value"
     
-    def test_update_session_not_found(self, session_storage, mock_redis):
+    def test_update_session_not_found(self, session_storage):
         """Test session update when not found"""
-        mock_redis.get.return_value = None
-        
         result = session_storage.update_session("non-existent", {"test": "data"})
-        
         assert result is False
     
-    def test_delete_session_success(self, session_storage, mock_redis):
+    def test_update_session_empty_id(self, session_storage):
+        """Test session update with empty ID"""
+        result = session_storage.update_session("", {"test": "data"})
+        assert result is False
+    
+    def test_delete_session_success(self, session_storage):
         """Test successful session deletion"""
-        session_id = "test-session-id"
-        mock_redis.delete.return_value = 1
+        record_id = "001XXXX"
+        context = {"test": "data"}
         
+        session_id = session_storage.create_session(record_id, context)
         result = session_storage.delete_session(session_id)
         
         assert result is True
-        mock_redis.delete.assert_called_once_with("session:test-session-id")
+        
+        # Verify deletion
+        session_data = session_storage.get_session(session_id)
+        assert session_data is None
     
-    def test_delete_session_not_found(self, session_storage, mock_redis):
+    def test_delete_session_not_found(self, session_storage):
         """Test session deletion when not found"""
-        mock_redis.delete.return_value = 0
-        
         result = session_storage.delete_session("non-existent")
-        
         assert result is False
     
-    def test_extend_session_ttl_success(self, session_storage, mock_redis):
+    def test_delete_session_empty_id(self, session_storage):
+        """Test session deletion with empty ID"""
+        result = session_storage.delete_session("")
+        assert result is False
+    
+    def test_extend_session_ttl_success(self, session_storage):
         """Test successful TTL extension"""
-        session_id = "test-session-id"
-        existing_data = {
-            "session_id": session_id,
-            "record_id": "001XXXX",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
-            "context": {"test": "data"}
-        }
-        mock_redis.exists.return_value = True
-        mock_redis.get.return_value = json.dumps(existing_data)
+        record_id = "001XXXX"
+        context = {"test": "data"}
         
+        session_id = session_storage.create_session(record_id, context)
+        
+        # Get original expires_at
+        original_data = session_storage.get_session(session_id)
+        original_expires = datetime.fromisoformat(original_data["expires_at"])
+        
+        # Extend TTL
         result = session_storage.extend_session_ttl(session_id, ttl=7200)
-        
         assert result is True
-        assert mock_redis.setex.called
+        
+        # Verify TTL was extended
+        updated_data = session_storage.get_session(session_id)
+        updated_expires = datetime.fromisoformat(updated_data["expires_at"])
+        assert updated_expires > original_expires
     
-    def test_extend_session_ttl_not_found(self, session_storage, mock_redis):
+    def test_extend_session_ttl_not_found(self, session_storage):
         """Test TTL extension when session not found"""
-        mock_redis.exists.return_value = False
-        
         result = session_storage.extend_session_ttl("non-existent")
-        
         assert result is False
     
-    def test_extend_session_ttl_default(self, session_storage, mock_redis):
+    def test_extend_session_ttl_default(self, session_storage):
         """Test TTL extension with default TTL"""
-        session_id = "test-session-id"
-        existing_data = {
-            "session_id": session_id,
-            "record_id": "001XXXX",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
-            "context": {"test": "data"}
-        }
-        mock_redis.exists.return_value = True
-        mock_redis.get.return_value = json.dumps(existing_data)
+        record_id = "001XXXX"
+        context = {"test": "data"}
         
+        session_id = session_storage.create_session(record_id, context)
+        
+        # Get original expires_at
+        original_data = session_storage.get_session(session_id)
+        original_expires = datetime.fromisoformat(original_data["expires_at"])
+        
+        # Extend with default TTL (3600 seconds)
         result = session_storage.extend_session_ttl(session_id)
-        
         assert result is True
-        # Verify default TTL was used
-        call_args = mock_redis.setex.call_args
-        assert call_args[0][1] == 3600  # default_ttl
-
+        
+        # Verify TTL was extended
+        updated_data = session_storage.get_session(session_id)
+        updated_expires = datetime.fromisoformat(updated_data["expires_at"])
+        assert updated_expires > original_expires
+    
+    def test_cleanup_expired_sessions(self, session_storage):
+        """Test automatic cleanup of expired sessions"""
+        record_id = "001XXXX"
+        context = {"test": "data"}
+        
+        # Create a session
+        session_id = session_storage.create_session(record_id, context)
+        
+        # Manually expire it
+        import sqlite3
+        with sqlite3.connect(session_storage.db_path) as conn:
+            conn.execute(
+                "UPDATE sessions SET expires_at = ? WHERE session_id = ?",
+                ((datetime.utcnow() - timedelta(seconds=1)).isoformat(), session_id)
+            )
+            conn.commit()
+        
+        # Call get_session which should trigger cleanup
+        result = session_storage.get_session(session_id)
+        assert result is None
+        
+        # Verify session was deleted from database
+        with sqlite3.connect(session_storage.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM sessions WHERE session_id = ?",
+                (session_id,)
+            )
+            count = cursor.fetchone()[0]
+            assert count == 0
+    
+    def test_multiple_sessions(self, session_storage):
+        """Test creating and retrieving multiple sessions"""
+        sessions = []
+        for i in range(5):
+            record_id = f"001XXXX{i}"
+            context = {"index": i}
+            session_id = session_storage.create_session(record_id, context)
+            sessions.append((session_id, record_id, context))
+        
+        # Verify all sessions can be retrieved
+        for session_id, record_id, context in sessions:
+            data = session_storage.get_session(session_id)
+            assert data is not None
+            assert data["record_id"] == record_id
+            assert data["context"] == context

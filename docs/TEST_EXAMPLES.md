@@ -277,7 +277,7 @@ curl -X POST http://localhost:8000/api/mcp/receive-request \
 
 **Étape 3** : Sauvegarder le session_id (ex: `session-550e8400-e29b-41d4-a716-446655440000`)
 
-**Étape 4** : Vérifier que la session a été créée (via logs ou Redis)
+**Étape 4** : Vérifier que la session a été créée (via logs ou base de données SQLite)
 
 **Résultat attendu** :
 - Session créée avec succès
@@ -543,13 +543,14 @@ Les services génèrent des logs structurés JSON. Vérifiez les logs pour :
 - Appels aux services
 - Erreurs éventuelles
 
-### Vérifier Redis (Sessions)
+### Vérifier SQLite (Sessions)
 
-Si Redis est configuré, vous pouvez vérifier les sessions :
+Les sessions sont stockées dans SQLite. Vous pouvez vérifier les sessions :
 ```bash
-redis-cli
-> KEYS session:*
-> GET session:<session_id>
+# Depuis le répertoire backend-mcp
+sqlite3 data/sessions.db
+> SELECT session_id, record_id, created_at FROM sessions;
+> SELECT * FROM sessions WHERE session_id = '<session_id>';
 ```
 
 ### Vérifier les Réponses

@@ -30,14 +30,14 @@ flowchart TB
     Mapping --> Extract[Data Extraction]
     Extract -->|Extracted Data| MCP
     
-    MCP -->|Store/Update| Redis[(Redis Session Storage)]
+    MCP -->|Store/Update| SQLITE[(SQLite Session Storage)]
     MCP -->|Workflow Result| End([Return to Salesforce])
     
     style Start fill:#e1f5ff
     style MCP fill:#fff4e1
     style MSF fill:#e1ffe1
     style LG fill:#ffe1e1
-    style Redis fill:#f0e1ff
+    style SQLITE fill:#f0e1ff
     style End fill:#e1f5ff
 ```
 
@@ -73,13 +73,13 @@ sequenceDiagram
 sequenceDiagram
     participant MCP as Backend MCP
     participant MSF as Mock Salesforce
-    participant Redis as Redis Storage
+    participant SQLITE as SQLite Storage
     
     MCP->>MSF: POST /mock/salesforce/get-record-data<br/>{record_id}
     MSF-->>MCP: {documents, fields}
     MCP->>MCP: Generate Session ID
-    MCP->>Redis: Create Session
-    Redis-->>MCP: Session Created
+    MCP->>SQLITE: Create Session
+    SQLITE-->>MCP: Session Created
 ```
 
 **Output de Mock Salesforce** :
@@ -229,7 +229,7 @@ flowchart TD
 flowchart LR
     A[LangGraph Response] --> B[Extract Data]
     B --> C[Update Session]
-    C --> D[Store in Redis]
+    C --> D[Store in SQLite]
     D --> E[Build Workflow Result]
     E --> F[Return to Salesforce]
 ```
@@ -257,11 +257,11 @@ flowchart LR
 sequenceDiagram
     participant SF as Salesforce
     participant MCP as Backend MCP
-    participant Redis as Redis Storage
+    participant SQLITE as SQLite Storage
     
     SF->>MCP: POST /api/mcp/receive-request<br/>{record_id, session_id, user_message}
-    MCP->>Redis: Get Session
-    Redis-->>MCP: Session Data
+    MCP->>SQLITE: Get Session
+    SQLITE-->>MCP: Session Data
     MCP->>MCP: Route to Continuation
 ```
 
@@ -278,7 +278,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A[Get Session from Redis] --> B[Load Context]
+    A[Get Session from SQLite] --> B[Load Context]
     B --> C[Add User Message to History]
     C --> D[Prompt Building]
     D --> E[Prompt Optimization]
@@ -425,7 +425,7 @@ flowchart LR
 
 ### Optimisations
 
-1. **Caching** : Sessions Redis pour éviter re-fetch Salesforce
+1. **Caching** : Sessions SQLite pour éviter re-fetch Salesforce
 2. **Async Processing** : Tâches asynchrones pour longues opérations
 3. **Prompt Optimization** : Réduction des tokens pour coûts
 4. **Parallel Processing** : Traitement parallèle des documents (futur)
@@ -452,7 +452,7 @@ flowchart LR
 
 ```
 1. Salesforce → MCP : {record_id: "001XX000001", session_id: "session-...", user_message: "Quel est le montant ?"}
-2. MCP : Get Session from Redis
+2. MCP : Get Session from SQLite
 3. MCP : Prompt Building (Continuation)
 4. MCP : Prompt Optimization
 5. MCP → LangGraph : MCP Message

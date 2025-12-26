@@ -55,20 +55,6 @@ foreach ($service in $Services) {
     }
 }
 
-# Check Redis
-Write-Host "Checking Redis..." -ForegroundColor Yellow
-try {
-    $null = redis-cli ping 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "  ✅ Redis is running" -ForegroundColor Green
-    } else {
-        Write-Host "  ⚠️  Redis is installed but not running" -ForegroundColor Yellow
-        Write-Host "     Start with: redis-server" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "  ⚠️  Redis not found (optional but recommended)" -ForegroundColor Yellow
-}
-
 # Check test-data
 Write-Host "Checking test-data..." -ForegroundColor Yellow
 $TestDataDir = Join-Path $ScriptDir "test-data"
