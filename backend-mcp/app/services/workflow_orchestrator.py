@@ -1,6 +1,7 @@
 """Workflow orchestrator for coordinating execution steps"""
 from typing import Dict, Any, Optional
 import logging
+import traceback
 from datetime import datetime
 import uuid
 import time
@@ -165,7 +166,8 @@ class WorkflowOrchestrator:
                     "Unexpected error in Step 1",
                     workflow_id=workflow_id,
                     error_type=type(e).__name__,
-                    error_message=error_msg
+                    error_message=error_msg,
+                    traceback=traceback.format_exc()
                 )
                 return self._build_workflow_response(workflow_state)
             
@@ -221,7 +223,8 @@ class WorkflowOrchestrator:
                         "Step 2 failed: Preprocessing",
                         workflow_id=workflow_id,
                         error_type=type(e).__name__,
-                        error_message=error_msg
+                        error_message=error_msg,
+                        traceback=traceback.format_exc()
                     )
                     # Continue workflow even if preprocessing fails
                     workflow_state["data"]["preprocessing"] = {
@@ -298,6 +301,15 @@ class WorkflowOrchestrator:
                     "error": error_msg,
                     "error_type": type(e).__name__
                 })
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "Step 3 failed: Prompt Building",
+                    workflow_id=workflow_id,
+                    error_type=type(e).__name__,
+                    error_message=error_msg,
+                    traceback=traceback.format_exc()
+                )
                 # Use fallback prompt
                 workflow_state["data"]["prompt_building"] = {
                     "status": "completed",
@@ -340,6 +352,15 @@ class WorkflowOrchestrator:
                 
             except Exception as e:
                 error_msg = str(e) if e else "Unknown error"
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "Step 4 failed: Prompt Optimization",
+                    workflow_id=workflow_id,
+                    error_type=type(e).__name__,
+                    error_message=error_msg,
+                    traceback=traceback.format_exc()
+                )
                 # Use original prompt if optimization fails
                 prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
                 workflow_state["data"]["prompt_optimization"] = {
@@ -410,6 +431,15 @@ class WorkflowOrchestrator:
                     "error_type": type(e).__name__
                 })
                 workflow_state["status"] = "failed"
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "Step 5 failed: MCP Formatting",
+                    workflow_id=workflow_id,
+                    error_type=type(e).__name__,
+                    error_message=error_msg,
+                    traceback=traceback.format_exc()
+                )
                 return self._build_workflow_response(workflow_state)
             
             # Step 6: MCP Sending
@@ -483,6 +513,15 @@ class WorkflowOrchestrator:
                     "error_type": type(e).__name__
                 })
                 workflow_state["status"] = "failed"
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "Step 6 failed: MCP Sending",
+                    workflow_id=workflow_id,
+                    error_type=type(e).__name__,
+                    error_message=error_msg,
+                    traceback=traceback.format_exc()
+                )
                 return self._build_workflow_response(workflow_state)
             
             # Step 7: Response Handling
@@ -525,6 +564,15 @@ class WorkflowOrchestrator:
                     "error": error_msg,
                     "error_type": type(e).__name__
                 })
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "Step 7 failed: Response Handling",
+                    workflow_id=workflow_id,
+                    error_type=type(e).__name__,
+                    error_message=error_msg,
+                    traceback=traceback.format_exc()
+                )
                 # Don't fail workflow, just log error
                 workflow_state["data"]["response_handling"] = {
                     "status": "completed",
@@ -580,7 +628,8 @@ class WorkflowOrchestrator:
                 record_id=record_id,
                 session_id=session_id,
                 error_type=type(e).__name__,
-                error_message=error_msg
+                error_message=error_msg,
+                traceback=traceback.format_exc()
             )
             
             return self._build_workflow_response(workflow_state)

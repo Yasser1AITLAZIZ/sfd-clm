@@ -2,6 +2,7 @@
 import json
 import uuid
 import logging
+import traceback
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import redis
@@ -62,7 +63,8 @@ class SessionStorage:
                 logging.ERROR,
                 "Unexpected error initializing SessionStorage",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             raise SessionStorageError(f"Unexpected error initializing SessionStorage: {e}") from e
     
@@ -173,7 +175,8 @@ class SessionStorage:
                 "Unexpected error in create_session",
                 record_id=record_id if 'record_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             raise SessionStorageError(f"Unexpected error creating session: {e}") from e
     
@@ -262,7 +265,8 @@ class SessionStorage:
                 "Unexpected error in get_session",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return None
     
@@ -414,7 +418,8 @@ class SessionStorage:
                 "Unexpected error in update_session",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return False
     
@@ -489,7 +494,8 @@ class SessionStorage:
                 "Unexpected error in delete_session",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return False
     
@@ -610,7 +616,8 @@ class SessionStorage:
                 "Unexpected error in extend_session_ttl",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return False
 
