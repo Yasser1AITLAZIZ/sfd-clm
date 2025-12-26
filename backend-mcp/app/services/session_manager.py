@@ -2,6 +2,7 @@
 from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
+import traceback
 
 from app.core.logging import get_logger, safe_log
 from app.core.exceptions import SessionStorageError, SessionNotFoundError, InvalidRequestError
@@ -117,7 +118,8 @@ class SessionManager:
                 "Unexpected error in initialize_session",
                 record_id=record_id if 'record_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             raise SessionStorageError(f"Unexpected error initializing session: {e}") from e
     
@@ -166,7 +168,8 @@ class SessionManager:
                 "Unexpected error in check_session_exists",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             # Return False on error to be safe
             return False
@@ -284,7 +287,8 @@ class SessionManager:
                 "Unexpected error in append_message_to_history",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return False
     
@@ -351,7 +355,8 @@ class SessionManager:
                 "Unexpected error in get_session_context",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return None
     
@@ -407,7 +412,8 @@ class SessionManager:
                 "Unexpected error in extend_session_ttl",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return False
 

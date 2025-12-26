@@ -105,7 +105,18 @@ class ConsoleFormatter(logging.Formatter):
             if timing_info:
                 parts.append(timing_info)
             
-            return " ".join(parts)
+            log_line = " ".join(parts)
+            
+            # Add traceback if available
+            if hasattr(record, 'traceback') and record.traceback:
+                traceback_str = str(record.traceback)
+                # Format traceback with indentation for readability
+                traceback_lines = traceback_str.split('\n')
+                formatted_traceback = '\n'.join([f"  {line}" for line in traceback_lines if line.strip()])
+                if formatted_traceback:
+                    log_line += f"\n{color}Traceback:{reset}\n{formatted_traceback}"
+            
+            return log_line
             
         except Exception as e:
             # Fallback to simple format
@@ -151,14 +162,28 @@ def safe_log(
     logger: logging.Logger,
     level: int,
     message: str,
+    traceback: Optional[str] = None,
     **kwargs: Any
 ) -> None:
-    """Safely log a message with defensive checks"""
+    """
+    Safely log a message with defensive checks.
+    
+    Args:
+        logger: Logger instance
+        level: Log level (logging.INFO, logging.ERROR, etc.)
+        message: Log message
+        traceback: Optional traceback string (from traceback.format_exc())
+        **kwargs: Additional context to include in log
+    """
     try:
         # Prepare safe extra data
         extra: Dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
         }
+        
+        # Add traceback if provided
+        if traceback:
+            extra["traceback"] = traceback
         
         # Add kwargs with safe defaults
         for key, value in kwargs.items():

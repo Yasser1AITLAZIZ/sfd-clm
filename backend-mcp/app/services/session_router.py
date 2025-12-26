@@ -1,6 +1,7 @@
 """Session router for handling new vs continuing sessions"""
 from typing import Dict, Any, Optional
 import logging
+import traceback
 from datetime import datetime
 
 from app.core.logging import get_logger, safe_log
@@ -42,7 +43,8 @@ def get_session_manager() -> SessionManager:
                 logging.ERROR,
                 "Failed to initialize SessionManager",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             raise SessionStorageError(f"Failed to initialize SessionManager: {e}") from e
     return _session_manager
@@ -118,7 +120,8 @@ async def validate_and_route(
             "Unexpected error in validate_and_route",
             record_id=record_id if 'record_id' in locals() else "unknown",
             error_type=type(e).__name__,
-            error_message=str(e) if e else "Unknown error"
+            error_message=str(e) if e else "Unknown error",
+            traceback=traceback.format_exc()
         )
         raise
 
@@ -216,7 +219,8 @@ async def route_to_initialization(record_id: str, user_message: str) -> Dict[str
             "Unexpected error in route_to_initialization",
             record_id=record_id if 'record_id' in locals() else "unknown",
             error_type=type(e).__name__,
-            error_message=str(e) if e else "Unknown error"
+            error_message=str(e) if e else "Unknown error",
+            traceback=traceback.format_exc()
         )
         raise
 
@@ -299,7 +303,8 @@ def route_to_continuation(session_id: str, user_message: str) -> Dict[str, Any]:
             "Unexpected error in route_to_continuation",
             session_id=session_id if 'session_id' in locals() else "unknown",
             error_type=type(e).__name__,
-            error_message=str(e) if e else "Unknown error"
+            error_message=str(e) if e else "Unknown error",
+            traceback=traceback.format_exc()
         )
         raise
 
