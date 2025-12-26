@@ -49,7 +49,7 @@ class SessionStorage:
         except (ConnectionError, TimeoutError) as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Failed to connect to Redis",
                 redis_url=redis_url.split("@")[-1] if "@" in redis_url else redis_url,
                 error_type=type(e).__name__,
@@ -59,7 +59,7 @@ class SessionStorage:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error initializing SessionStorage",
                 error_type=type(e).__name__,
                 error_message=str(e) if e else "Unknown"
@@ -81,12 +81,13 @@ class SessionStorage:
         Returns:
             session_id: Generated session ID (UUID v4)
         """
+
         try:
             # Validate inputs
             if not record_id or not record_id.strip():
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Empty record_id in create_session",
                     record_id=record_id or "none"
                 )
@@ -95,12 +96,12 @@ class SessionStorage:
             if not context:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Empty context in create_session",
                     record_id=record_id
                 )
                 raise SessionStorageError("context cannot be None or empty")
-            
+
             record_id = record_id.strip()
             
             # Generate session ID
@@ -118,7 +119,7 @@ class SessionStorage:
                 "expires_at": expires_at.isoformat(),
                 "context": context
             }
-            
+
             # Store in Redis with TTL
             key = self._get_key(session_id)
             try:
@@ -128,9 +129,10 @@ class SessionStorage:
                     json.dumps(session_data)
                 )
             except (ConnectionError, TimeoutError) as e:
+
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis connection error in create_session",
                     session_id=session_id,
                     record_id=record_id,
@@ -139,9 +141,10 @@ class SessionStorage:
                 )
                 raise SessionStorageError(f"Redis connection error: {e}") from e
             except RedisError as e:
+
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis error in create_session",
                     session_id=session_id,
                     record_id=record_id,
@@ -152,7 +155,7 @@ class SessionStorage:
             
             safe_log(
                 logger,
-                logger.INFO,
+                logging.INFO,
                 "Session created",
                 session_id=session_id,
                 record_id=record_id,
@@ -166,7 +169,7 @@ class SessionStorage:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in create_session",
                 record_id=record_id if 'record_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -203,7 +206,7 @@ class SessionStorage:
             except (ConnectionError, TimeoutError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis connection error in get_session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -214,7 +217,7 @@ class SessionStorage:
             except RedisError as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis error in get_session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -244,7 +247,7 @@ class SessionStorage:
             except (json.JSONDecodeError, KeyError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Invalid session data format",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -255,7 +258,7 @@ class SessionStorage:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in get_session",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -303,7 +306,7 @@ class SessionStorage:
             except (ConnectionError, TimeoutError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis connection error in update_session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -313,7 +316,7 @@ class SessionStorage:
             except RedisError as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis error in update_session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -335,7 +338,7 @@ class SessionStorage:
             except (json.JSONDecodeError, KeyError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Invalid session data format in update_session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -376,7 +379,7 @@ class SessionStorage:
             except (ConnectionError, TimeoutError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis connection error saving updated session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -386,7 +389,7 @@ class SessionStorage:
             except RedisError as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis error saving updated session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -396,7 +399,7 @@ class SessionStorage:
             
             safe_log(
                 logger,
-                logger.INFO,
+                logging.INFO,
                 "Session updated",
                 session_id=session_id,
                 updated_fields=list(updates.keys())
@@ -407,7 +410,7 @@ class SessionStorage:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in update_session",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -444,7 +447,7 @@ class SessionStorage:
             except (ConnectionError, TimeoutError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis connection error in delete_session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -454,7 +457,7 @@ class SessionStorage:
             except RedisError as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis error in delete_session",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -465,7 +468,7 @@ class SessionStorage:
             if deleted > 0:
                 safe_log(
                     logger,
-                    logger.INFO,
+                    logging.INFO,
                     "Session deleted",
                     session_id=session_id
                 )
@@ -482,7 +485,7 @@ class SessionStorage:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in delete_session",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -524,7 +527,7 @@ class SessionStorage:
             except (ConnectionError, TimeoutError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis connection error checking session existence",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -534,7 +537,7 @@ class SessionStorage:
             except RedisError as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis error checking session existence",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -572,7 +575,7 @@ class SessionStorage:
             except (ConnectionError, TimeoutError) as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis connection error extending session TTL",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -582,7 +585,7 @@ class SessionStorage:
             except RedisError as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Redis error extending session TTL",
                     session_id=session_id,
                     error_type=type(e).__name__,
@@ -592,7 +595,7 @@ class SessionStorage:
             
             safe_log(
                 logger,
-                logger.INFO,
+                logging.INFO,
                 "Session TTL extended",
                 session_id=session_id,
                 new_ttl=new_ttl
@@ -603,7 +606,7 @@ class SessionStorage:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in extend_session_ttl",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,

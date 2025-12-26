@@ -1,0 +1,95 @@
+PS C:\Users\yasser.aitlaziz\sfd-clm\test-data> .\view_logs.ps1 backend-mcp
+Available log files:
+  backend-langgraph.log (1.11 KB)
+  backend-langgraph.stderr.log (0.37 KB)
+  backend-mcp.log (38.68 KB)
+  backend-mcp.stderr.log (0.36 KB)
+  mock-salesforce.log (6.42 KB)
+  mock-salesforce.stderr.log (0.37 KB)
+
+=== backend-mcp.log ===
+2025-12-25 16:04:40 INFO     MCPTaskQueue initialized
+2025-12-25 16:04:40 INFO     Backend MCP service starting
+INFO:     127.0.0.1:64501 - "GET /health HTTP/1.1" 200 OK
+
+PS C:\Users\yasser.aitlaziz\sfd-clm\test-data> .\view_logs.ps1 backend-mcp
+Available log files:
+  backend-langgraph.log (1.22 KB)
+  backend-langgraph.stderr.log (0.37 KB)
+  backend-mcp.log (40.47 KB)
+  backend-mcp.stderr.log (0.36 KB)
+  mock-salesforce.log (6.84 KB)
+  mock-salesforce.stderr.log (0.37 KB)
+
+=== backend-mcp.log ===
+2025-12-25 16:04:40 INFO     MCPTaskQueue initialized
+2025-12-25 16:04:40 INFO     Backend MCP service starting
+INFO:     127.0.0.1:64501 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64771 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64830 - "GET /health HTTP/1.1" 200 OK
+2025-12-25 16:05:04 INFO     Request received (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 INFO      [WF:cc47e965] Workflow execution started (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 INFO      [WF:cc47e965] [Step 1/7: validation_routing] [14%] Step 1/7: validation_routing - Starting Validation & Routing (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 INFO     Routing request (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 INFO     Routing to initialization (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 INFO     Fetching Salesforce data (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 INFO     Detected new Salesforce format (fields) (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 INFO     Salesforce data fetched successfully (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 ERROR    Unexpected error in create_session (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 ERROR    Storage error in initialize_session (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 ERROR    Failed to initialize session (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 ERROR    Unexpected error in route_to_initialization (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 ERROR    Unexpected error in validate_and_route (record_id=TEST_20251225_170504)
+2025-12-25 16:05:04 ERROR     [WF:cc47e965] Unexpected error in Step 1
+2025-12-25 16:05:04 ERROR    Workflow execution failed (record_id=TEST_20251225_170504)
+INFO:     127.0.0.1:64833 - "POST /api/mcp/receive-request HTTP/1.1" 500 Internal Server Error
+
+
+
+                                                                PS C:\Users\yasser.aitlaziz\sfd-clm> cd .\test-data\                                                                                                                                                              
+==========================================
+Pipeline End-to-End Test
+==========================================
+
+Checking if services are running...
+[OK] All services are already running
+
+Running pipeline test...
+
+============================================================
+PIPELINE END-TO-END TEST
+============================================================
+
+Validating prerequisites...
+------------------------------------------------------------
+✅ Documents directory exists with 1 PDF file(s)
+✅ Fields file exists with 13 field(s)
+✅ Results directory ready: C:\Users\yasser.aitlaziz\sfd-clm\test-data\results
+------------------------------------------------------------
+Starting file server...
+✅ File server started on http://localhost:8003
+
+Waiting for services to be ready...
+✅ Mock Salesforce is ready
+✅ Backend MCP is ready
+✅ Backend LangGraph is ready
+
+Reading test data...
+✅ Found 1 valid document(s)
+✅ Loaded 13 valid field(s) from C:\Users\yasser.aitlaziz\sfd-clm\test-data\fields\fields.json
+
+Setting up test data...
+📤 Setting up test data for record_id: TEST_20251225_170504
+✅ Test data setup successful
+
+Running pipeline test...
+📤 Sending request to backend-mcp...
+   Record ID: TEST_20251225_170504
+   User message: Extract data from documents
+❌ Request failed: 500 Server Error: Internal Server Error for url: http://localhost:8000/api/mcp/receive-request 
+
+❌ No results to display
+✅ Results saved to C:\Users\yasser.aitlaziz\sfd-clm\test-data\results\test_results_20251225_170504.json
+
+❌ Test completed with errors
+✅ File server stopped

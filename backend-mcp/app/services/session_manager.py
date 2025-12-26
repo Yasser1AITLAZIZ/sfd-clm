@@ -29,7 +29,7 @@ class SessionManager:
         
         safe_log(
             logger,
-            logger.INFO,
+            logging.INFO,
             "SessionManager initialized"
         )
     
@@ -53,7 +53,7 @@ class SessionManager:
             if not record_id or not record_id.strip():
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Empty record_id in initialize_session",
                     record_id=record_id or "none"
                 )
@@ -62,7 +62,7 @@ class SessionManager:
             if not salesforce_data:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Empty salesforce_data in initialize_session",
                     record_id=record_id
                 )
@@ -88,7 +88,7 @@ class SessionManager:
             except SessionStorageError as e:
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Storage error in initialize_session",
                     record_id=record_id,
                     error_type=type(e).__name__,
@@ -98,7 +98,7 @@ class SessionManager:
             
             safe_log(
                 logger,
-                logger.INFO,
+                logging.INFO,
                 "Session initialized",
                 session_id=session_id,
                 record_id=record_id,
@@ -113,7 +113,7 @@ class SessionManager:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in initialize_session",
                 record_id=record_id if 'record_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -162,7 +162,7 @@ class SessionManager:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in check_session_exists",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -193,7 +193,7 @@ class SessionManager:
             if not session_id or not session_id.strip():
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Empty session_id in append_message_to_history",
                     session_id=session_id or "none"
                 )
@@ -202,7 +202,7 @@ class SessionManager:
             if role not in ("user", "assistant"):
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Invalid role in append_message_to_history",
                     session_id=session_id,
                     role=role or "none"
@@ -212,7 +212,7 @@ class SessionManager:
             if not message or not message.strip():
                 safe_log(
                     logger,
-                    logger.ERROR,
+                    logging.ERROR,
                     "Empty message in append_message_to_history",
                     session_id=session_id,
                     role=role
@@ -259,7 +259,7 @@ class SessionManager:
             if success:
                 safe_log(
                     logger,
-                    logger.INFO,
+                    logging.INFO,
                     "Message appended to history",
                     session_id=session_id,
                     role=role,
@@ -280,7 +280,7 @@ class SessionManager:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in append_message_to_history",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -347,7 +347,7 @@ class SessionManager:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in get_session_context",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,
@@ -385,7 +385,7 @@ class SessionManager:
             if success:
                 safe_log(
                     logger,
-                    logger.INFO,
+                    logging.INFO,
                     "Session TTL extended via manager",
                     session_id=session_id,
                     ttl=ttl or "default"
@@ -403,7 +403,7 @@ class SessionManager:
         except Exception as e:
             safe_log(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 "Unexpected error in extend_session_ttl",
                 session_id=session_id if 'session_id' in locals() else "unknown",
                 error_type=type(e).__name__,

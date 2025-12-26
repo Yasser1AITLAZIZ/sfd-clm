@@ -37,11 +37,7 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
     start_time = datetime.utcnow()
     
     try:
-        # #region agent log
-        with open(r"c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log", "a") as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"salesforce_client.py:34","message":"fetch_salesforce_data entry","data":{"record_id":record_id,"mock_url":settings.mock_salesforce_url if hasattr(settings, 'mock_salesforce_url') else 'none'},"timestamp":int(datetime.utcnow().timestamp()*1000)}) + "\n")
-        # #endregion
+       
         # Validate URL is configured
         if not settings.mock_salesforce_url or not settings.mock_salesforce_url.strip():
             safe_log(
@@ -55,11 +51,7 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
         url = f"{settings.mock_salesforce_url.strip().rstrip('/')}/mock/salesforce/get-record-data"
         timeout = settings.salesforce_request_timeout
         
-        # #region agent log
-        with open(r"c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log", "a") as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"salesforce_client.py:50","message":"About to make HTTP request","data":{"url":url,"timeout":timeout},"timestamp":int(datetime.utcnow().timestamp()*1000)}) + "\n")
-        # #endregion
+        
         
         safe_log(
             logger,
@@ -94,11 +86,7 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
             except httpx.ConnectError as e:
                 # Connection error
                 duration = (datetime.utcnow() - start_time).total_seconds()
-                # #region agent log
-                with open(r"c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log", "a") as f:
-                    import json
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"salesforce_client.py:77","message":"ConnectError caught","data":{"url":url,"error":str(e) if e else "none","duration":duration},"timestamp":int(datetime.utcnow().timestamp()*1000)}) + "\n")
-                # #endregion
+               
                 safe_log(
                     logger,
                     logging.ERROR,

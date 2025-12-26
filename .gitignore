@@ -60,3 +60,8 @@ Thumbs.db
 .cursor/
 .venv/
 */.venv/
+
+
+test-data/documents/
+test-data/fields/
+test-data/results/
