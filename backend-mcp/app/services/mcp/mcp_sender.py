@@ -159,12 +159,16 @@ class MCPSender:
                 except httpx.HTTPStatusError as e:
                     status_code = e.response.status_code if e.response else 0
                     response_text = e.response.text if e.response else "No response"
+                    response_preview = response_text[:1000] if response_text else "No response"
                     safe_log(
                         logger,
                         logging.WARNING,
                         "HTTP error from LangGraph",
+                        message_id=message_id,
                         status_code=status_code,
-                        response_text=response_text[:500] if response_text else "No response"
+                        response_text_length=len(response_text) if response_text else 0,
+                        response_preview=response_preview,
+                        error_type=type(e).__name__
                     )
                     if status_code >= 500 and attempt < self.max_retries - 1:
                         # Server error, retry
@@ -463,9 +467,20 @@ class MCPSender:
         """
         try:
             # Parse JSON response
+            response_text = response.text
             response_data = response.json()
             
-            # Log full response for debugging
+            # Log raw response details
+            safe_log(
+                logger,
+                logging.INFO,
+                "LangGraph raw HTTP response received",
+                status_code=response.status_code,
+                response_text_length=len(response_text),
+                response_text_preview=response_text[:500] if response_text else "No response text"
+            )
+            
+            # Log full response structure for debugging
             safe_log(
                 logger,
                 logging.INFO,
@@ -473,7 +488,8 @@ class MCPSender:
                 response_status=response_data.get("status"),
                 has_data=("data" in response_data),
                 data_keys=list(response_data.get("data", {}).keys()) if "data" in response_data else [],
-                extracted_data_keys=list(response_data.get("data", {}).get("extracted_data", {}).keys()) if "data" in response_data and "extracted_data" in response_data.get("data", {}) else []
+                extracted_data_keys=list(response_data.get("data", {}).get("extracted_data", {}).keys()) if "data" in response_data and "extracted_data" in response_data.get("data", {}) else [],
+                response_data_keys=list(response_data.keys())
             )
             
             # Extract data from response structure: {"status": "success", "data": {...}}
@@ -483,13 +499,21 @@ class MCPSender:
                 confidence_scores = data.get("confidence_scores", {})
                 quality_score = data.get("quality_score")
                 
+                # Check if extracted_data is null or empty
+                extracted_data_is_none = extracted_data is None
+                extracted_data_is_empty = not extracted_data or len(extracted_data) == 0
+                
                 safe_log(
                     logger,
                     logging.INFO,
                     "Data extracted from LangGraph response",
-                    extracted_data_keys=list(extracted_data.keys()),
-                    extracted_data_count=len(extracted_data),
-                    confidence_scores_count=len(confidence_scores)
+                    extracted_data_keys=list(extracted_data.keys())[:10] if extracted_data else [],
+                    extracted_data_count=len(extracted_data) if extracted_data else 0,
+                    extracted_data_is_none=extracted_data_is_none,
+                    extracted_data_is_empty=extracted_data_is_empty,
+                    confidence_scores_count=len(confidence_scores) if confidence_scores else 0,
+                    quality_score=quality_score,
+                    has_extracted_data=bool(extracted_data)
                 )
             else:
                 # Fallback: try to parse as LanggraphResponseSchema directly

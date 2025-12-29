@@ -159,9 +159,43 @@ class WorkflowOrchestrator:
         input_data: Optional[Dict[str, Any]] = None
     ) -> Optional[str]:
         """Helper method to create a workflow step record"""
-        if not self.step_storage or session_id == "none":
+        # Log detailed information about why step might not be created
+        if not self.step_storage:
+            safe_log(
+                logger,
+                logging.WARNING,
+                f"Workflow step NOT created for {step_name}: step_storage is None",
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name=step_name,
+                step_order=step_order
+            )
             return None
+        
+        if session_id == "none":
+            safe_log(
+                logger,
+                logging.WARNING,
+                f"Workflow step NOT created for {step_name}: session_id is 'none'",
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name=step_name,
+                step_order=step_order
+            )
+            return None
+        
         try:
+            safe_log(
+                logger,
+                logging.DEBUG,
+                f"Creating workflow step for {step_name}",
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name=step_name,
+                step_order=step_order,
+                has_input_data=bool(input_data)
+            )
+            
             step_id = self.step_storage.create_workflow_step(
                 session_id=session_id,
                 workflow_id=workflow_id,
@@ -169,14 +203,30 @@ class WorkflowOrchestrator:
                 step_order=step_order,
                 input_data=input_data
             )
+            
+            safe_log(
+                logger,
+                logging.INFO,
+                f"Workflow step created successfully for {step_name}",
+                step_id=step_id,
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name=step_name
+            )
+            
             return step_id
         except Exception as e:
             safe_log(
                 logger,
-                logging.WARNING,
+                logging.ERROR,
                 f"Failed to create workflow step for {step_name}",
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name=step_name,
+                step_order=step_order,
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
+                error_message=str(e) if e else "Unknown",
+                traceback=traceback.format_exc()
             )
             return None
     
@@ -1063,6 +1113,25 @@ class WorkflowOrchestrator:
                 confidence_scores = mcp_response.confidence_scores if hasattr(mcp_response, 'confidence_scores') else {}
                 response_status = mcp_response.status if hasattr(mcp_response, 'status') else "unknown"
                 
+                # Log extracted_data details
+                extracted_data_is_none = extracted_data is None
+                extracted_data_is_empty = not extracted_data or len(extracted_data) == 0
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "MCP response received from LangGraph",
+                    record_id=record_id,
+                    session_id=session_id or "none",
+                    response_status=response_status,
+                    extracted_data_count=len(extracted_data) if extracted_data else 0,
+                    extracted_data_is_none=extracted_data_is_none,
+                    extracted_data_is_empty=extracted_data_is_empty,
+                    extracted_data_keys=list(extracted_data.keys())[:10] if extracted_data else [],
+                    confidence_scores_count=len(confidence_scores) if confidence_scores else 0,
+                    has_extracted_data=bool(extracted_data)
+                )
+                
                 workflow_state["data"]["mcp_sending"] = {
                     "status": "completed",
                     "mcp_response": {
@@ -1203,9 +1272,29 @@ class WorkflowOrchestrator:
             try:
                 mcp_response_data = workflow_state["data"]["mcp_sending"].get("mcp_response", {})
                 
+                # Log mcp_response_data details
+                extracted_data_from_response = mcp_response_data.get("extracted_data", {})
+                extracted_data_is_none = extracted_data_from_response is None
+                extracted_data_is_empty = not extracted_data_from_response or len(extracted_data_from_response) == 0
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "Processing response_handling step",
+                    record_id=record_id,
+                    session_id=session_id or "none",
+                    mcp_response_status=mcp_response_data.get("status", "unknown"),
+                    extracted_data_count=len(extracted_data_from_response) if extracted_data_from_response else 0,
+                    extracted_data_is_none=extracted_data_is_none,
+                    extracted_data_is_empty=extracted_data_is_empty,
+                    extracted_data_keys=list(extracted_data_from_response.keys())[:10] if extracted_data_from_response else [],
+                    has_extracted_data=bool(extracted_data_from_response),
+                    mcp_response_keys=list(mcp_response_data.keys())
+                )
+                
                 workflow_state["data"]["response_handling"] = {
                     "status": "completed",
-                    "extracted_data": mcp_response_data.get("extracted_data", {}),
+                    "extracted_data": extracted_data_from_response if extracted_data_from_response else {},
                     "confidence_scores": mcp_response_data.get("confidence_scores", {}),
                     "final_status": mcp_response_data.get("status", "success")
                 }

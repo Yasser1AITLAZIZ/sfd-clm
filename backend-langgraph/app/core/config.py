@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # Anthropic (optional, for Claude models)
     anthropic_api_key: Optional[str] = None
     
+    # Phoenix Arize configuration
+    phoenix_enabled: bool = False
+    phoenix_project_name: str = "sfd-clm-langgraph"
+    phoenix_endpoint: Optional[str] = None  # If None, uses local Phoenix instance
+    phoenix_collector_endpoint: Optional[str] = None  # OTLP collector endpoint
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

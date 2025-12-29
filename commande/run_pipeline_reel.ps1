@@ -250,20 +250,41 @@ try {
         Write-Host "Workflow ID: $($workflowData.workflow_id)" -ForegroundColor White
         Write-Host ""
         
-        # Extract extracted data
-        $workflowStepsData = $workflowData.data
-        $responseHandling = $workflowStepsData.response_handling
-        $extractedData = $responseHandling.extracted_data
-        $confidenceScores = $responseHandling.confidence_scores
+        # Extract extracted data with null checks
+        $workflowStepsData = $null
+        $responseHandling = $null
+        $extractedData = $null
+        $confidenceScores = $null
         
-        if (-not $extractedData) {
-            $mcpSending = $workflowStepsData.mcp_sending
-            $mcpResponse = $mcpSending.mcp_response
-            $extractedData = $mcpResponse.extracted_data
-            $confidenceScores = $mcpResponse.confidence_scores
+        if ($workflowData -and $workflowData.data) {
+            $workflowStepsData = $workflowData.data
+            
+            if ($workflowStepsData.response_handling) {
+                $responseHandling = $workflowStepsData.response_handling
+                if ($responseHandling.extracted_data) {
+                    $extractedData = $responseHandling.extracted_data
+                }
+                if ($responseHandling.confidence_scores) {
+                    $confidenceScores = $responseHandling.confidence_scores
+                }
+            }
+            
+            # Fallback to mcp_sending if response_handling doesn't have data
+            if (-not $extractedData -and $workflowStepsData.mcp_sending) {
+                $mcpSending = $workflowStepsData.mcp_sending
+                if ($mcpSending.mcp_response) {
+                    $mcpResponse = $mcpSending.mcp_response
+                    if ($mcpResponse.extracted_data) {
+                        $extractedData = $mcpResponse.extracted_data
+                    }
+                    if ($mcpResponse.confidence_scores) {
+                        $confidenceScores = $mcpResponse.confidence_scores
+                    }
+                }
+            }
         }
         
-        if ($extractedData) {
+        if ($extractedData -and $extractedData.Count -gt 0) {
             $fieldCount = $extractedData.Count
             $fieldWord = if ($fieldCount -eq 1) { "field" } else { "fields" }
             Write-Host "Extracted Data: $fieldCount $fieldWord" -ForegroundColor Cyan
@@ -287,6 +308,13 @@ try {
             }
         } else {
             Write-Host "[WARNING] No extracted data found in response" -ForegroundColor Yellow
+            if ($responseHandling) {
+                Write-Host "  Response handling status: $($responseHandling.final_status)" -ForegroundColor Gray
+            }
+            if ($workflowStepsData -and $workflowStepsData.mcp_sending) {
+                $mcpStatus = $workflowStepsData.mcp_sending.mcp_response.status
+                Write-Host "  MCP sending status: $mcpStatus" -ForegroundColor Gray
+            }
         }
     } else {
         Write-Host "Status: $($response.status)" -ForegroundColor Red

@@ -213,7 +213,38 @@ class WorkflowStepStorage:
             # Store in SQLite
             now = datetime.utcnow().isoformat()
             try:
+                safe_log(
+                    logger,
+                    logging.DEBUG,
+                    "Inserting workflow step into database",
+                    step_id=step_id,
+                    session_id=session_id,
+                    workflow_id=workflow_id,
+                    step_name=step_name,
+                    step_order=step_order,
+                    db_path=self.db_path
+                )
+                
                 with self._get_connection() as conn:
+                    # Check if table exists
+                    cursor = conn.execute("""
+                        SELECT name FROM sqlite_master 
+                        WHERE type='table' AND name='workflow_steps'
+                    """)
+                    table_exists = cursor.fetchone() is not None
+                    
+                    if not table_exists:
+                        safe_log(
+                            logger,
+                            logging.ERROR,
+                            "workflow_steps table does not exist",
+                            db_path=self.db_path,
+                            step_id=step_id,
+                            step_name=step_name
+                        )
+                        # Try to create the table
+                        self._init_database()
+                    
                     conn.execute("""
                         INSERT INTO workflow_steps (
                             step_id, session_id, workflow_id, step_name, step_order, status,
@@ -238,6 +269,15 @@ class WorkflowStepStorage:
                         now
                     ))
                     conn.commit()
+                    
+                    safe_log(
+                        logger,
+                        logging.DEBUG,
+                        "Workflow step inserted successfully",
+                        step_id=step_id,
+                        session_id=session_id,
+                        step_name=step_name
+                    )
             except sqlite3.Error as e:
                 safe_log(
                     logger,
@@ -245,6 +285,9 @@ class WorkflowStepStorage:
                     "SQLite error creating workflow step",
                     step_id=step_id,
                     step_name=step_name,
+                    session_id=session_id,
+                    workflow_id=workflow_id,
+                    db_path=self.db_path,
                     error_type=type(e).__name__,
                     error_message=str(e) if e else "Unknown",
                     traceback=traceback.format_exc()

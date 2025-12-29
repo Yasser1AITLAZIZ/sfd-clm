@@ -434,6 +434,10 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         from app.api.v1.endpoints.metrics import store_metrics
         store_metrics(request_id, full_metrics)
         
+        # Log final state details before building response
+        extracted_data_is_empty = not final_state.extracted_data or len(final_state.extracted_data) == 0
+        extracted_data_is_none = final_state.extracted_data is None
+        
         safe_log(
             logger,
             logging.INFO,
@@ -441,8 +445,11 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             request_id=request_id,
             record_id=record_id,
             execution_time=execution_time,
-            fields_extracted=len(final_state.extracted_data),
-            quality_score=final_state.quality_score
+            fields_extracted=len(final_state.extracted_data) if final_state.extracted_data else 0,
+            quality_score=final_state.quality_score,
+            extracted_data_is_none=extracted_data_is_none,
+            extracted_data_is_empty=extracted_data_is_empty,
+            extracted_data_keys=list(final_state.extracted_data.keys())[:10] if final_state.extracted_data else []
         )
         
         # Build response
@@ -456,6 +463,22 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             "text_blocks_count": len(final_state.text_blocks),
             "metrics": metrics_summary
         }
+        
+        # Log response data details before returning
+        safe_log(
+            logger,
+            logging.INFO,
+            "LangGraph response data prepared",
+            request_id=request_id,
+            record_id=record_id,
+            response_status="success",
+            extracted_data_count=len(response_data.get("extracted_data", {})),
+            extracted_data_keys=list(response_data.get("extracted_data", {}).keys())[:10],
+            confidence_scores_count=len(response_data.get("confidence_scores", {})),
+            quality_score=response_data.get("quality_score"),
+            has_extracted_data=bool(response_data.get("extracted_data")),
+            extracted_data_is_empty=not response_data.get("extracted_data") or len(response_data.get("extracted_data", {})) == 0
+        )
         
         return JSONResponse(
             status_code=status.HTTP_200_OK,

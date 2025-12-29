@@ -118,7 +118,10 @@ async def ocr_and_mapping_tool(
         ))
         
         print(f"✅ [OCR+Mapping Tool] Completed: {len(mapping_results.get('extracted_data', {}))} fields extracted")
-        print(f"📊 [OCR+Mapping Tool] Quality score: {quality_score:.2f}")
+        if quality_score is not None:
+            print(f"📊 [OCR+Mapping Tool] Quality score: {quality_score:.2f}")
+        else:
+            print(f"📊 [OCR+Mapping Tool] Quality score: None (no confidence scores available)")
         
         return Command(update=patch, graph=Command.PARENT)
         
