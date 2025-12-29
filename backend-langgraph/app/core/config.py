@@ -31,6 +31,7 @@ class LimitsConfig(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
         env_prefix = "LIMITS_"
+        extra = "ignore"  # Ignore extra environment variables that don't match the prefix
 
 
 class Settings(BaseSettings):
@@ -68,6 +69,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra environment variables that don't match defined fields
 
 
 settings = Settings()
