@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     app_name: str = "Backend LangGraph Service"
     debug: bool = False
     log_level: str = "DEBUG"
+    log_format: str = "console"  # console, json, human, readable
     
     # Server
     host: str = "0.0.0.0"
@@ -48,6 +49,20 @@ class Settings(BaseSettings):
     # Mock mode (for testing without LLM API)
     # Pydantic will convert string "true"/"True"/"1" to bool True
     mock_mode: bool = False
+    
+    # Azure AD Authentication (for Azure OpenAI)
+    az_tenant_token_url: Optional[str] = None
+    az_scope: Optional[str] = None
+    az_client_id: Optional[str] = None
+    az_client_secret: Optional[str] = None
+    
+    # Azure OpenAI Configuration
+    az_openai_endpoint: Optional[str] = None
+    az_openai_api_version: Optional[str] = None
+    az_openai_deployment_name: Optional[str] = None
+    
+    # Anthropic (optional, for Claude models)
+    anthropic_api_key: Optional[str] = None
     
     class Config:
         env_file = ".env"

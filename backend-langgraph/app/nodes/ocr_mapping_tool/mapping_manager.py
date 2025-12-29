@@ -47,7 +47,7 @@ class MappingManager:
     
     def __init__(self, llm_builder):
         """Initialize Mapping Manager with LLM builder"""
-        cfg = get_config_loader().get_agent_config("ocr_mapping_tool")
+        cfg = get_config_loader().get_agent_config("mapping")
         
         # Get provider and model from config
         provider = cfg.get("provider", "openai")
@@ -60,7 +60,7 @@ class MappingManager:
             temperature=cfg.get("temperature", 0.0),
         )
         # Use LLM extraction timeout if available, otherwise fallback to default
-        self.timeout_s = float(cfg.get("llm_extraction_timeout", cfg.get("timeout_s", 120)))
+        self.timeout_s = float(cfg.get("llm_extraction_timeout", 120))
     
     def _chunk_ocr_text(self, ocr_text: str) -> List[str]:
         """

@@ -46,7 +46,7 @@ class OCRManager:
     
     def __init__(self, llm_builder):
         """Initialize OCR Manager with LLM builder"""
-        cfg = get_config_loader().get_agent_config("ocr_mapping_tool")
+        cfg = get_config_loader().get_agent_config("ocr")
         self.enabled = cfg.get("enabled", True)
         
         # Get provider and model from config
@@ -61,7 +61,7 @@ class OCRManager:
         )
         self.concurrency = int(cfg.get("concurrency_limit", 4))
         # Use per-page timeout if available, otherwise fallback to default
-        self.timeout_s = float(cfg.get("ocr_timeout_per_page", cfg.get("timeout_s", 60)))
+        self.timeout_s = float(cfg.get("ocr_timeout_per_page", 60))
         self.memory_manager = MemoryManager()
 
     def _generate_block_id(self, text: str, bbox: dict) -> str:
