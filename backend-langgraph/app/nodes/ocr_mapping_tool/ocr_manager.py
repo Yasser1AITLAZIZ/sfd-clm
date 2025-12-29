@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.state import MCPAgentState, PageOCR, TextBlock, Document
 from app.config.config_loader import get_config_loader
 from app.config.llm_builder import LLMBuilderFactory
+from app.utils.memory_manager import MemoryManager
 
 
 _PROMPT_SYSTEM = """Tu es un expert en OCR (Optical Character Recognition).
@@ -59,7 +60,9 @@ class OCRManager:
             temperature=cfg.get("temperature", 0.0),
         )
         self.concurrency = int(cfg.get("concurrency_limit", 4))
-        self.timeout_s = int(cfg.get("timeout_s", 60))
+        # Use per-page timeout if available, otherwise fallback to default
+        self.timeout_s = float(cfg.get("ocr_timeout_per_page", cfg.get("timeout_s", 60)))
+        self.memory_manager = MemoryManager()
 
     def _generate_block_id(self, text: str, bbox: dict) -> str:
         """Generate a unique block ID from text content and position."""
@@ -174,6 +177,7 @@ class OCRManager:
     async def process(self, state: MCPAgentState) -> MCPAgentState:
         """Process all documents in the state asynchronously."""
         print("🔍 [OCR Manager] Starting OCR processing...")
+        self.memory_manager.log_memory_usage("before OCR processing")
         sem = asyncio.Semaphore(self.concurrency)
         tasks = []
         
@@ -199,6 +203,9 @@ class OCRManager:
                         "text_blocks": text_blocks,
                         "processed": True
                     })
+                    
+                    # Cleanup memory after processing each page
+                    self.memory_manager.cleanup_memory()
                 except Exception as e:
                     print(f"❌ [OCR Manager] OCR error: {e}")
                     documents[doc_idx].pages[page_idx] = page.model_copy(update={
@@ -238,6 +245,10 @@ class OCRManager:
             "ocr_text": "\n".join(consolidated_text),
             "text_blocks": all_text_blocks
         })
+        
+        # Final memory cleanup
+        self.memory_manager.cleanup_memory()
+        self.memory_manager.log_memory_usage("after OCR processing")
         
         print(f"✅ [OCR Manager] Processing complete: {len(consolidated_text)} pages, {len(all_text_blocks)} text blocks")
         return state

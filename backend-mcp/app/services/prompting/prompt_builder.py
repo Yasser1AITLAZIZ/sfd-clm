@@ -346,6 +346,79 @@ class PromptBuilder:
             )
             return "Erreur lors du formatage des données extraites."
     
+    async def build_prompt(
+        self,
+        user_message: str,
+        preprocessed_data: Any,
+        routing_status: str
+    ) -> Dict[str, Any]:
+        """
+        Build prompt wrapper method for workflow orchestrator.
+        
+        Args:
+            user_message: User request message
+            preprocessed_data: Preprocessed data (can be dict or PreprocessedDataSchema)
+            routing_status: "initialization" or "continuation"
+            
+        Returns:
+            Dict with prompt, scenario_type
+        """
+        try:
+            # Convert preprocessed_data to PreprocessedDataSchema if it's a dict
+            if isinstance(preprocessed_data, dict):
+                # Try to create PreprocessedDataSchema from dict
+                from app.models.schemas import PreprocessedDataSchema, ContextSummarySchema
+                try:
+                    preprocessed_data = PreprocessedDataSchema(**preprocessed_data)
+                except Exception:
+                    # If conversion fails, create minimal schema
+                    preprocessed_data = PreprocessedDataSchema(
+                        record_id=preprocessed_data.get("record_id", "unknown"),
+                        record_type=preprocessed_data.get("record_type", "Claim"),
+                        processed_documents=preprocessed_data.get("processed_documents", []),
+                        fields_dictionary=preprocessed_data.get("fields_dictionary", {}),
+                        context_summary=ContextSummarySchema(
+                            record_type=preprocessed_data.get("record_type", "Claim"),
+                            objective="",
+                            documents_available=[],
+                            fields_to_extract=[],
+                            business_rules=[]
+                        ),
+                        validation_results={"passed": False, "errors": []},
+                        metrics={}
+                    )
+            
+            if routing_status == "initialization":
+                prompt_response = await self.build_initialization_prompt(
+                    preprocessed_data,
+                    user_message
+                )
+            else:
+                # For continuation, we'd need session context, but for now use initialization
+                prompt_response = await self.build_initialization_prompt(
+                    preprocessed_data,
+                    user_message
+                )
+            
+            return {
+                "prompt": prompt_response.prompt if prompt_response.prompt else "",
+                "scenario_type": prompt_response.scenario_type if prompt_response.scenario_type else "extraction"
+            }
+            
+        except Exception as e:
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Error in build_prompt wrapper",
+                error_type=type(e).__name__,
+                error_message=str(e) if e else "Unknown error"
+            )
+            # Return fallback
+            return {
+                "prompt": user_message or "Extract data from documents",
+                "scenario_type": "extraction"
+            }
+    
     def _get_instructions_for_record_type(self, record_type: str) -> str:
         """Get instructions specific to record type"""
         instructions_map = {

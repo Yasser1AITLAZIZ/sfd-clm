@@ -38,6 +38,12 @@ def get_workflow_orchestrator() -> WorkflowOrchestrator:
     return _workflow_orchestrator
 
 
+def reset_workflow_orchestrator():
+    """Reset the workflow orchestrator singleton (for testing/debugging)"""
+    global _workflow_orchestrator
+    _workflow_orchestrator = None
+
+
 @router.post(
     "/api/mcp/receive-request",
     status_code=status.HTTP_200_OK,
@@ -144,6 +150,8 @@ async def receive_request(request: ReceiveRequestSchema, http_request: Request) 
         
         # Execute workflow using WorkflowOrchestrator
         try:
+            # Force recreation of orchestrator to ensure latest code
+            reset_workflow_orchestrator()
             workflow_orchestrator = get_workflow_orchestrator()
             
             # Prepare request data for workflow
@@ -234,7 +242,8 @@ async def receive_request(request: ReceiveRequestSchema, http_request: Request) 
                 record_id=record_id,
                 session_id=session_id or "none",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown error"
+                error_message=str(e) if e else "Unknown error",
+                traceback=traceback.format_exc()
             )
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

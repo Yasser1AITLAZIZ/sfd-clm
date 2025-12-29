@@ -173,6 +173,81 @@ class SessionSchema(BaseModel):
     context: SessionContextSchema
 
 
+# New refactored session schemas
+class SessionInputDataSchema(BaseModel):
+    """Schema for session input data (what is sent to langgraph)"""
+    salesforce_data: SalesforceDataResponseSchema
+    user_message: str
+    context: Dict[str, Any] = Field(default_factory=dict)  # documents, fields, session_id
+    metadata: Dict[str, Any] = Field(default_factory=dict)  # record_id, record_type, timestamp
+    prompt: Optional[str] = None
+    timestamp: str  # ISO format datetime string
+
+
+class LanggraphResponseDataSchema(BaseModel):
+    """Schema for langgraph response data (complete response from langgraph)"""
+    extracted_data: Dict[str, Any] = Field(default_factory=dict)
+    confidence_scores: Dict[str, float] = Field(default_factory=dict)
+    quality_score: Optional[float] = None
+    field_mappings: Dict[str, str] = Field(default_factory=dict)
+    processing_time: Optional[float] = None
+    ocr_text_length: Optional[int] = None
+    text_blocks_count: Optional[int] = None
+    timestamp: str  # ISO format datetime string
+    status: Literal["success", "error", "partial"] = "success"
+    error: Optional[str] = None
+
+
+class InteractionRequestSchema(BaseModel):
+    """Schema for a single interaction request"""
+    user_message: str
+    prompt: Optional[str] = None
+    timestamp: str  # ISO format datetime string
+
+
+class InteractionResponseSchema(BaseModel):
+    """Schema for a single interaction response"""
+    extracted_data: Dict[str, Any] = Field(default_factory=dict)
+    confidence_scores: Dict[str, float] = Field(default_factory=dict)
+    timestamp: str  # ISO format datetime string
+
+
+class InteractionHistoryItemSchema(BaseModel):
+    """Schema for a single interaction in the history"""
+    interaction_id: str
+    request: InteractionRequestSchema
+    response: Optional[InteractionResponseSchema] = None
+    processing_time: Optional[float] = None
+    status: Literal["success", "error", "partial", "pending"] = "pending"
+
+
+class ProcessingMetadataSchema(BaseModel):
+    """Schema for processing metadata"""
+    preprocessing_completed: bool = False
+    preprocessing_timestamp: Optional[str] = None
+    prompt_built: bool = False
+    prompt_built_timestamp: Optional[str] = None
+    langgraph_processed: bool = False
+    langgraph_processed_timestamp: Optional[str] = None
+    workflow_id: Optional[str] = None
+    total_processing_time: Optional[float] = None
+    additional_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RefactoredSessionSchema(BaseModel):
+    """Schema for refactored session structure"""
+    session_id: str
+    record_id: str
+    created_at: str  # ISO format datetime string
+    updated_at: str  # ISO format datetime string
+    expires_at: str  # ISO format datetime string
+    status: Literal["active", "completed", "failed", "expired"] = "active"
+    input_data: SessionInputDataSchema
+    langgraph_response: Optional[LanggraphResponseDataSchema] = None
+    interactions_history: List[InteractionHistoryItemSchema] = Field(default_factory=list)
+    processing_metadata: ProcessingMetadataSchema = Field(default_factory=ProcessingMetadataSchema)
+
+
 class WorkflowRequestSchema(BaseModel):
     """Request schema for workflow execution"""
     record_id: str = Field(..., description="Salesforce record ID", min_length=1)

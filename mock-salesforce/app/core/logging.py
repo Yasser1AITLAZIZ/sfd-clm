@@ -42,7 +42,12 @@ def get_logger(name: str) -> logging.Logger:
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
+        
+        # Get log level from settings
+        from app.core.config import settings
+        log_level_str = settings.log_level.upper()
+        log_level = getattr(logging, log_level_str, logging.DEBUG)
+        logger.setLevel(log_level)
     
     return logger
 

@@ -223,11 +223,45 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
             try:
                 # Parse as SalesforceFormFieldsResponseSchema
                 form_fields_response = SalesforceFormFieldsResponseSchema(fields=data["fields"])
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "Parsing new format fields",
+                    record_id=record_id,
+                    fields_count=len(form_fields_response.fields)
+                )
+                
                 # Convert each field
                 for i, field in enumerate(form_fields_response.fields, 1):
                     try:
+                        # Log field details before conversion
+                        field_label = field.label if hasattr(field, 'label') else 'unknown'
+                        field_api_name = field.apiName if hasattr(field, 'apiName') else None
+                        
+                        safe_log(
+                            logger,
+                            logging.DEBUG,
+                            "Converting Salesforce form field",
+                            record_id=record_id,
+                            field_index=i,
+                            field_label=field_label,
+                            field_api_name=field_api_name,
+                            field_type=field.type if hasattr(field, 'type') else 'unknown'
+                        )
+                        
                         converted_field = FieldToFillResponseSchema.from_salesforce_form_field(field)
                         fields_to_fill.append(converted_field)
+                        
+                        safe_log(
+                            logger,
+                            logging.DEBUG,
+                            "Field converted successfully",
+                            record_id=record_id,
+                            field_index=i,
+                            converted_field_name=converted_field.field_name,
+                            converted_field_type=converted_field.field_type
+                        )
                     except Exception as e:
                         safe_log(
                             logger,
@@ -236,10 +270,20 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
                             record_id=record_id,
                             field_index=i,
                             field_label=field.label if hasattr(field, 'label') else 'unknown',
+                            field_api_name=field.apiName if hasattr(field, 'apiName') else None,
                             error_type=type(e).__name__,
                             error_message=str(e) if e else "Unknown"
                         )
                         continue
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "Fields conversion completed",
+                    record_id=record_id,
+                    original_fields_count=len(form_fields_response.fields),
+                    converted_fields_count=len(fields_to_fill)
+                )
             except Exception as e:
                 safe_log(
                     logger,

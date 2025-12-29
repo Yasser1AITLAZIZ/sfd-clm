@@ -6,7 +6,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.logging import get_logger, safe_log
-from app.api.v1.endpoints import mcp
+from app.api.v1.endpoints import mcp, metrics
 
 import logging
 
@@ -30,6 +30,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(mcp.router, tags=["LangGraph MCP"])
+app.include_router(metrics.router, prefix="/api/v1", tags=["Metrics"])
 
 
 @app.get("/health")

@@ -1,0 +1,30 @@
+# Example override file for local development
+# Copy this file to docker-compose.override.yml and customize as needed
+# This file is automatically loaded by docker-compose
+
+version: '3.8'
+
+services:
+  mock-salesforce:
+    volumes:
+      # Mount source code for hot reload
+      - ./mock-salesforce/app:/app/app
+    environment:
+      - LOG_LEVEL=DEBUG
+
+  backend-mcp:
+    volumes:
+      # Mount source code for hot reload
+      - ./backend-mcp/app:/app/app
+    environment:
+      - LOG_LEVEL=DEBUG
+      # Override with your local settings
+      # - MOCK_SALESFORCE_URL=http://host.docker.internal:8001
+
+  backend-langgraph:
+    volumes:
+      # Mount source code for hot reload
+      - ./backend-langgraph/app:/app/app
+    environment:
+      - LOG_LEVEL=DEBUG
+

@@ -234,36 +234,129 @@ flowchart LR
 
 ## Gestion des Sessions
 
-### Structure de Session dans SQLite
+### Structure de Session dans SQLite (Refactorisée)
 
-Les sessions sont stockées dans une table SQLite `sessions` avec les colonnes suivantes :
+Les sessions sont stockées dans une table SQLite `sessions` avec une structure refactorisée qui sépare clairement les données d'entrée (input) et les réponses du langgraph :
 
 ```sql
 CREATE TABLE sessions (
     session_id TEXT PRIMARY KEY,
     record_id TEXT NOT NULL,
-    data TEXT NOT NULL,  -- JSON encodé
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL
+    expires_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    input_data TEXT NOT NULL,              -- JSON: données envoyées au langgraph
+    langgraph_response TEXT,                -- JSON: réponse du langgraph
+    interactions_history TEXT,              -- JSON array: historique des interactions
+    processing_metadata TEXT               -- JSON: métadonnées de traitement
 )
+
+-- Index pour performance
+CREATE INDEX idx_expires_at ON sessions(expires_at);
+CREATE INDEX idx_record_id ON sessions(record_id);
+CREATE INDEX idx_status ON sessions(status);
 ```
 
-Structure JSON des données de session :
+### Structure JSON Détaillée
+
+#### `input_data` (JSON)
+Contient toutes les données envoyées au langgraph :
 ```json
 {
-    "record_id": "001XX000001",
-    "created_at": "2024-01-15T10:30:00Z",
-    "updated_at": "2024-01-15T10:35:00Z",
+    "salesforce_data": {
+        "record_id": "001XX000001",
+        "record_type": "Claim",
+        "documents": [...],
+        "fields_to_fill": [...]
+    },
+    "user_message": "Extract data from documents",
     "context": {
         "documents": [...],
         "fields": [...],
-        "extracted_data": {...},
-        "conversation_history": [...]
+        "session_id": "uuid"
     },
-    "ttl": 86400
+    "metadata": {
+        "record_id": "001XX000001",
+        "record_type": "Claim",
+        "timestamp": "2024-01-15T10:30:00Z"
+    },
+    "prompt": "Full prompt text...",
+    "timestamp": "2024-01-15T10:30:00Z"
 }
 ```
+
+#### `langgraph_response` (JSON)
+Contient la réponse complète du langgraph :
+```json
+{
+    "extracted_data": {
+        "field_name": "value",
+        ...
+    },
+    "confidence_scores": {
+        "field_name": 0.95,
+        ...
+    },
+    "quality_score": 0.92,
+    "field_mappings": {
+        "field_name": "text_location"
+    },
+    "processing_time": 2.5,
+    "ocr_text_length": 5000,
+    "text_blocks_count": 25,
+    "timestamp": "2024-01-15T10:30:05Z",
+    "status": "success"
+}
+```
+
+#### `interactions_history` (JSON Array)
+Historique complet des interactions avec traçabilité :
+```json
+[
+    {
+        "interaction_id": "uuid",
+        "request": {
+            "user_message": "...",
+            "prompt": "...",
+            "timestamp": "2024-01-15T10:30:00Z"
+        },
+        "response": {
+            "extracted_data": {...},
+            "confidence_scores": {...},
+            "timestamp": "2024-01-15T10:30:05Z"
+        },
+        "processing_time": 2.5,
+        "status": "success"
+    },
+    ...
+]
+```
+
+#### `processing_metadata` (JSON)
+Métadonnées de traitement avec timestamps :
+```json
+{
+    "preprocessing_completed": true,
+    "preprocessing_timestamp": "2024-01-15T10:30:02Z",
+    "prompt_built": true,
+    "prompt_built_timestamp": "2024-01-15T10:30:03Z",
+    "langgraph_processed": true,
+    "langgraph_processed_timestamp": "2024-01-15T10:30:05Z",
+    "workflow_id": "uuid",
+    "total_processing_time": 5.2,
+    "additional_metadata": {}
+}
+```
+
+### Avantages de la Nouvelle Structure
+
+1. **Séparation claire** : Input et output sont dans des colonnes distinctes
+2. **Traçabilité** : Historique complet des interactions dans `interactions_history`
+3. **Requêtes SQL efficaces** : Possibilité de filtrer/rechercher sur des colonnes spécifiques
+4. **Debugging facilité** : Accès direct aux données d'entrée et de sortie
+5. **Évolutivité** : Facile d'ajouter de nouvelles colonnes sans casser l'existant
+6. **Performance** : Index sur les colonnes fréquemment utilisées
 
 ### Cycle de Vie d'une Session
 

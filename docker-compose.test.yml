@@ -1,0 +1,21 @@
+# Docker Compose configuration for testing
+# This extends the main docker-compose.yml with test-specific settings
+version: '3.8'
+
+services:
+  mock-salesforce:
+    environment:
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./test-data/documents:/app/test-data/documents:ro
+
+  backend-mcp:
+    environment:
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./test-data:/app/test-data:ro
+
+  backend-langgraph:
+    environment:
+      - LOG_LEVEL=DEBUG
+

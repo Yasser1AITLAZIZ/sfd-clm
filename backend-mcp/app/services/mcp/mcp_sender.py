@@ -13,6 +13,7 @@ from app.models.schemas import (
     MCPResponseSchema,
     LanggraphResponseSchema
 )
+from app.services.preprocessing.pdf_processor import PDFProcessor
 from .mcp_client import MCPClient
 
 logger = get_logger(__name__)
@@ -31,16 +32,53 @@ class MCPSender:
         self.client = mcp_client if mcp_client else MCPClient()
         self.langgraph_url = getattr(settings, 'langgraph_url', 'http://localhost:8002')
         self.api_key = getattr(settings, 'langgraph_api_key', None)
-        self.timeout = getattr(settings, 'langgraph_timeout', 30.0)
+        self.base_timeout = getattr(settings, 'langgraph_timeout', 30.0)
         self.max_retries = 3
         self.retry_delays = [2.0, 4.0, 8.0]  # Backoff delays in seconds
+        self.pdf_processor = PDFProcessor()
         
         safe_log(
             logger,
             logging.INFO,
             "MCPSender initialized",
-            langgraph_url=self.langgraph_url
+            langgraph_url=self.langgraph_url,
+            base_timeout=self.base_timeout
         )
+    
+    def calculate_timeout(self, fields_count: int = 0, documents_count: int = 0) -> float:
+        """
+        Calculate adaptive timeout based on form complexity.
+        
+        Args:
+            fields_count: Number of fields to extract
+            documents_count: Number of documents to process
+            
+        Returns:
+            Calculated timeout in seconds
+        """
+        timeout_base = getattr(settings, 'timeout_base', 30.0)
+        timeout_per_field = getattr(settings, 'timeout_per_field', 0.5)
+        timeout_per_document = getattr(settings, 'timeout_per_document', 10.0)
+        timeout_max = getattr(settings, 'timeout_max', 300.0)
+        
+        fields_factor = fields_count * timeout_per_field
+        documents_factor = documents_count * timeout_per_document
+        calculated_timeout = timeout_base + fields_factor + documents_factor
+        
+        # Cap at maximum timeout
+        final_timeout = min(calculated_timeout, timeout_max)
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Timeout calculated",
+            fields_count=fields_count,
+            documents_count=documents_count,
+            calculated_timeout=calculated_timeout,
+            final_timeout=final_timeout
+        )
+        
+        return final_timeout
     
     async def send_to_langgraph(
         self,
@@ -120,15 +158,14 @@ class MCPSender:
                         
                 except httpx.HTTPStatusError as e:
                     status_code = e.response.status_code if e.response else 0
-                    # #region agent log
-                    import json as json_lib
-                    import time
-                    try:
-                        response_text = e.response.text if e.response else "No response"
-                        with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                            f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_http_error","timestamp":int(time.time()*1000),"location":"mcp_sender.py:121","message":"HTTP error from LangGraph","data":{"status_code":status_code,"response_text":response_text[:500]},"sessionId":"debug-session","runId":"run1","hypothesisId":"E"}) + "\n")
-                    except: pass
-                    # #endregion
+                    response_text = e.response.text if e.response else "No response"
+                    safe_log(
+                        logger,
+                        logging.WARNING,
+                        "HTTP error from LangGraph",
+                        status_code=status_code,
+                        response_text=response_text[:500] if response_text else "No response"
+                    )
                     if status_code >= 500 and attempt < self.max_retries - 1:
                         # Server error, retry
                         delay = self.retry_delays[attempt]
@@ -150,15 +187,7 @@ class MCPSender:
             raise MCPError("Failed to send message after retries")
             
         except Exception as e:
-            # #region agent log
-            import json as json_lib
-            import time
             import traceback
-            try:
-                with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_send_error","timestamp":int(time.time()*1000),"location":"mcp_sender.py:143","message":"Error sending to LangGraph","data":{"error_type":type(e).__name__,"error_message":str(e),"traceback":traceback.format_exc()},"sessionId":"debug-session","runId":"run1","hypothesisId":"E"}) + "\n")
-            except: pass
-            # #endregion
             safe_log(
                 logger,
                 logging.ERROR,
@@ -177,7 +206,7 @@ class MCPSender:
             )
     
     async def _send_request(self, mcp_message: MCPMessageSchema) -> httpx.Response:
-        """Send HTTP request to Langgraph backend"""
+        """Send HTTP request to Langgraph backend with adaptive timeout"""
         url = f"{self.langgraph_url.rstrip('/')}/api/langgraph/process-mcp-request"
         
         headers = {
@@ -189,7 +218,12 @@ class MCPSender:
         # Convert MCP message to format expected by backend-langgraph
         request_body = await self._convert_mcp_message_to_langgraph_format(mcp_message)
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        # Calculate adaptive timeout based on complexity
+        fields_count = len(request_body.get("fields_dictionary", {}))
+        documents_count = len(request_body.get("documents", []))
+        calculated_timeout = self.calculate_timeout(fields_count, documents_count)
+        
+        async with httpx.AsyncClient(timeout=calculated_timeout) as client:
             response = await client.post(url, json=request_body, headers=headers)
             response.raise_for_status()
             return response
@@ -253,23 +287,65 @@ class MCPSender:
                         doc_response.raise_for_status()
                         doc_content = doc_response.content
                     
-                    # Convert to base64
-                    image_b64 = base64.b64encode(doc_content).decode('utf-8')
+                    # Validate document size (50MB limit)
+                    max_size = 50 * 1024 * 1024  # 50MB
+                    if len(doc_content) > max_size:
+                        safe_log(
+                            logger,
+                            logging.WARNING,
+                            "Document size exceeds limit, skipping",
+                            document_id=doc_id,
+                            document_size_mb=round(len(doc_content) / (1024 * 1024), 2),
+                            max_size_mb=50
+                        )
+                        continue
                     
                     # Determine MIME type
                     image_mime = doc_type
-                    if not image_mime or image_mime == "application/pdf":
-                        # For PDFs, we'd need to extract pages, but for now treat as single page
-                        # TODO: Implement PDF page extraction
+                    if not image_mime:
                         image_mime = "application/pdf"
                     
-                    # Create single page (for now, PDFs treated as single page)
-                    # TODO: Split PDF into multiple pages
-                    pages.append({
-                        "page_number": 1,
-                        "image_b64": image_b64,
-                        "image_mime": image_mime
-                    })
+                    # Handle PDF documents - extract all pages
+                    if image_mime == "application/pdf":
+                        safe_log(
+                            logger,
+                            logging.INFO,
+                            "Processing PDF document",
+                            document_id=doc_id
+                        )
+                        pages = self.pdf_processor.extract_pdf_pages(doc_content)
+                        
+                        if not pages:
+                            safe_log(
+                                logger,
+                                logging.WARNING,
+                                "No pages extracted from PDF, treating as single page",
+                                document_id=doc_id
+                            )
+                            # Fallback: treat as single page
+                            image_b64 = base64.b64encode(doc_content).decode('utf-8')
+                            pages.append({
+                                "page_number": 1,
+                                "image_b64": image_b64,
+                                "image_mime": "application/pdf"
+                            })
+                    else:
+                        # For non-PDF images, treat as single page
+                        image_b64 = base64.b64encode(doc_content).decode('utf-8')
+                        pages.append({
+                            "page_number": 1,
+                            "image_b64": image_b64,
+                            "image_mime": image_mime
+                        })
+                    
+                    safe_log(
+                        logger,
+                        logging.INFO,
+                        "Document processed successfully",
+                        document_id=doc_id,
+                        pages_count=len(pages),
+                        document_type=image_mime
+                    )
                     
                 except Exception as e:
                     safe_log(
@@ -295,47 +371,60 @@ class MCPSender:
         # Convert fields dictionary
         fields_dictionary = {}
         context_fields = mcp_message.context.get("fields", []) if mcp_message.context else []
-        # #region agent log
-        import json as json_lib
-        import time
-        try:
-            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_before_fields_conv","timestamp":int(time.time()*1000),"location":"mcp_sender.py:277","message":"Before fields conversion","data":{"context_fields_count":len(context_fields),"first_field_sample":context_fields[0] if context_fields else None},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}) + "\n")
-        except: pass
-        # #endregion
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Converting fields to fields_dictionary",
+            record_id=record_id,
+            context_fields_count=len(context_fields),
+            context_fields_type=type(context_fields).__name__
+        )
         
         for i, field in enumerate(context_fields):
+            # Handle both dict and Pydantic objects
             if isinstance(field, dict):
-                # Generate unique field_name: use apiName, field_name, or create from label/index
-                field_name = field.get("field_name") or field.get("apiName")
-                if not field_name or field_name == "unknown":
-                    # Create field_name from label (sanitized) or use index
-                    label = field.get("label", "")
-                    if label:
-                        # Sanitize label to create valid field name
-                        import re
-                        field_name = re.sub(r'[^a-zA-Z0-9_]', '_', label.lower().strip())
-                        field_name = re.sub(r'_+', '_', field_name)  # Replace multiple underscores
-                        field_name = field_name.strip('_')  # Remove leading/trailing underscores
-                        if not field_name:
-                            field_name = f"field_{i+1}"
-                    else:
+                field_dict = field
+            elif hasattr(field, 'model_dump'):
+                # Pydantic model - convert to dict
+                field_dict = field.model_dump()
+            elif hasattr(field, '__dict__'):
+                # Regular object - convert to dict
+                field_dict = field.__dict__
+            else:
+                safe_log(
+                    logger,
+                    logging.WARNING,
+                    "Skipping field with unsupported type",
+                    record_id=record_id,
+                    field_index=i,
+                    field_type=type(field).__name__
+                )
+                continue
+            
+            # Generate unique field_name: use apiName, field_name, or create from label/index
+            field_name = field_dict.get("field_name") or field_dict.get("apiName")
+            if not field_name or field_name == "unknown":
+                # Create field_name from label (sanitized) or use index
+                label = field_dict.get("label", "")
+                if label:
+                    # Sanitize label to create valid field name
+                    import re
+                    field_name = re.sub(r'[^a-zA-Z0-9_]', '_', label.lower().strip())
+                    field_name = re.sub(r'_+', '_', field_name)  # Replace multiple underscores
+                    field_name = field_name.strip('_')  # Remove leading/trailing underscores
+                    if not field_name:
                         field_name = f"field_{i+1}"
-                
-                fields_dictionary[field_name] = {
-                    "label": field.get("label", field_name),
-                    "type": field.get("field_type") or field.get("type", "text"),
-                    "required": field.get("required", False),
-                    "possibleValues": field.get("possibleValues", field.get("possible_values", [])),
-                    "defaultValue": field.get("defaultValue") or field.get("default_value")
-                }
-        
-        # #region agent log
-        try:
-            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_after_fields_conv","timestamp":int(time.time()*1000),"location":"mcp_sender.py:299","message":"After fields conversion","data":{"fields_dict_keys":list(fields_dictionary.keys()),"fields_dict_count":len(fields_dictionary)},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}) + "\n")
-        except: pass
-        # #endregion
+                else:
+                    field_name = f"field_{i+1}"
+            
+            fields_dictionary[field_name] = {
+                "label": field_dict.get("label", field_name),
+                "type": field_dict.get("field_type") or field_dict.get("type", "text"),
+                "required": field_dict.get("required", False),
+                "possibleValues": field_dict.get("possibleValues", field_dict.get("possible_values", [])),
+                "defaultValue": field_dict.get("defaultValue") or field_dict.get("default_value")
+            }
         
         # Build request body
         request_body = {
@@ -352,7 +441,9 @@ class MCPSender:
             "Converted MCP message to LangGraph format",
             record_id=record_id,
             documents_count=len(documents),
-            fields_count=len(fields_dictionary)
+            context_fields_count=len(context_fields),
+            fields_dictionary_count=len(fields_dictionary),
+            fields_dictionary_keys=list(fields_dictionary.keys())[:10] if fields_dictionary else []
         )
         
         return request_body
@@ -373,14 +464,17 @@ class MCPSender:
         try:
             # Parse JSON response
             response_data = response.json()
-            # #region agent log
-            import json as json_lib
-            import time
-            try:
-                with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_response_received","timestamp":int(time.time()*1000),"location":"mcp_sender.py:342","message":"LangGraph response received","data":{"response_status":response_data.get("status"),"has_data":("data" in response_data),"data_keys":list(response_data.get("data",{}).keys()) if "data" in response_data else []},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}) + "\n")
-            except: pass
-            # #endregion
+            
+            # Log full response for debugging
+            safe_log(
+                logger,
+                logging.INFO,
+                "LangGraph response received",
+                response_status=response_data.get("status"),
+                has_data=("data" in response_data),
+                data_keys=list(response_data.get("data", {}).keys()) if "data" in response_data else [],
+                extracted_data_keys=list(response_data.get("data", {}).get("extracted_data", {}).keys()) if "data" in response_data and "extracted_data" in response_data.get("data", {}) else []
+            )
             
             # Extract data from response structure: {"status": "success", "data": {...}}
             if response_data.get("status") == "success" and "data" in response_data:
@@ -388,12 +482,15 @@ class MCPSender:
                 extracted_data = data.get("extracted_data", {})
                 confidence_scores = data.get("confidence_scores", {})
                 quality_score = data.get("quality_score")
-                # #region agent log
-                try:
-                    with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                        f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_data_extracted","timestamp":int(time.time()*1000),"location":"mcp_sender.py:348","message":"Data extracted from response","data":{"extracted_data_keys":list(extracted_data.keys()),"extracted_data_count":len(extracted_data),"confidence_scores_count":len(confidence_scores)},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}) + "\n")
-                except: pass
-                # #endregion
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "Data extracted from LangGraph response",
+                    extracted_data_keys=list(extracted_data.keys()),
+                    extracted_data_count=len(extracted_data),
+                    confidence_scores_count=len(confidence_scores)
+                )
             else:
                 # Fallback: try to parse as LanggraphResponseSchema directly
                 try:
@@ -414,12 +511,6 @@ class MCPSender:
                 confidence_scores=confidence_scores,
                 status="success"
             )
-            # #region agent log
-            try:
-                with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_mcp_response_built","timestamp":int(time.time()*1000),"location":"mcp_sender.py:364","message":"MCPResponseSchema built","data":{"extracted_data_count":len(mcp_response.extracted_data),"confidence_scores_count":len(mcp_response.confidence_scores),"status":mcp_response.status},"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}) + "\n")
-            except: pass
-            # #endregion
             
             safe_log(
                 logger,

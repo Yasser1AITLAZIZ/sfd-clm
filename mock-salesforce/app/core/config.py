@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "Mock Salesforce Service"
     debug: bool = False
-    log_level: str = "INFO"
+    log_level: str = "DEBUG"
     
     # Server
     host: str = "0.0.0.0"

@@ -315,6 +315,46 @@ class PromptOptimizer:
         except Exception:
             return ""
     
+    async def optimize_prompt(self, prompt: str) -> Dict[str, Any]:
+        """
+        Optimize prompt wrapper method for workflow orchestrator.
+        
+        Args:
+            prompt: Prompt text string
+            
+        Returns:
+            Dict with prompt, optimizations_applied
+        """
+        try:
+            # Create a minimal PromptResponseSchema
+            prompt_response = PromptResponseSchema(
+                prompt=prompt,
+                scenario_type="extraction",
+                metadata={}
+            )
+            
+            # Optimize
+            optimized = await self.optimize(prompt_response)
+            
+            return {
+                "prompt": optimized.prompt if optimized.prompt else prompt,
+                "optimizations_applied": optimized.optimizations_applied if optimized.optimizations_applied else []
+            }
+            
+        except Exception as e:
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Error in optimize_prompt wrapper",
+                error_type=type(e).__name__,
+                error_message=str(e) if e else "Unknown error"
+            )
+            # Return original prompt
+            return {
+                "prompt": prompt,
+                "optimizations_applied": []
+            }
+    
     def _estimate_cost(self, prompt: str) -> Optional[float]:
         """
         Estimate cost for prompt (if API pricing is known).

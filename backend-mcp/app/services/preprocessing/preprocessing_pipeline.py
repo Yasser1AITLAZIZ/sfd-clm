@@ -31,7 +31,7 @@ class PreprocessingPipeline:
     
     async def execute_preprocessing(
         self,
-        salesforce_data: SalesforceDataResponseSchema
+        salesforce_data: Any
     ) -> PreprocessedDataSchema:
         """
         Execute complete preprocessing pipeline.
@@ -43,7 +43,7 @@ class PreprocessingPipeline:
         4. Generate context summary
         
         Args:
-            salesforce_data: Salesforce data response schema
+            salesforce_data: Salesforce data response schema (can be Pydantic model or dict)
             
         Returns:
             Preprocessed data schema
@@ -51,8 +51,31 @@ class PreprocessingPipeline:
         start_time = datetime.utcnow()
         
         try:
-            record_id = salesforce_data.record_id if salesforce_data.record_id else "unknown"
-            record_type = salesforce_data.record_type if salesforce_data.record_type else "Claim"
+            # Handle both Pydantic model and dict
+            if not salesforce_data:
+                raise ValueError("salesforce_data cannot be None or empty")
+            
+            # Try to access as dict first (most common case)
+            try:
+                if isinstance(salesforce_data, dict):
+                    record_id = salesforce_data.get("record_id", "unknown")
+                    record_type = salesforce_data.get("record_type", "Claim")
+                    documents = salesforce_data.get("documents", [])
+                    fields_to_fill = salesforce_data.get("fields_to_fill", [])
+                elif hasattr(salesforce_data, 'get') and callable(getattr(salesforce_data, 'get', None)):
+                    # Dict-like object
+                    record_id = salesforce_data.get("record_id", "unknown")
+                    record_type = salesforce_data.get("record_type", "Claim")
+                    documents = salesforce_data.get("documents", [])
+                    fields_to_fill = salesforce_data.get("fields_to_fill", [])
+                else:
+                    raise AttributeError("Not a dict")
+            except (AttributeError, TypeError) as e:
+                # Pydantic model - use getattr for safe access
+                record_id = getattr(salesforce_data, 'record_id', None) or "unknown"
+                record_type = getattr(salesforce_data, 'record_type', None) or "Claim"
+                documents = getattr(salesforce_data, 'documents', None) or []
+                fields_to_fill = getattr(salesforce_data, 'fields_to_fill', None) or []
             
             safe_log(
                 logger,
@@ -71,9 +94,9 @@ class PreprocessingPipeline:
             )
             
             processed_documents = []
-            if salesforce_data.documents:
+            if documents:
                 processed_documents = await self.document_preprocessor.process_documents(
-                    salesforce_data.documents
+                    documents
                 )
             
             safe_log(
@@ -92,8 +115,17 @@ class PreprocessingPipeline:
                 record_id=record_id
             )
             
+            safe_log(
+                logger,
+                logging.INFO,
+                "Preparing fields dictionary",
+                record_id=record_id,
+                input_fields_count=len(fields_to_fill) if fields_to_fill else 0,
+                record_type=record_type
+            )
+            
             fields_dictionary = await self.fields_preprocessor.prepare_fields_dictionary(
-                salesforce_data.fields_to_fill if salesforce_data.fields_to_fill else [],
+                fields_to_fill,
                 record_type
             )
             
@@ -102,7 +134,9 @@ class PreprocessingPipeline:
                 logging.INFO,
                 "Fields dictionary prepared",
                 record_id=record_id,
-                fields_count=len(fields_dictionary.fields)
+                input_fields_count=len(fields_to_fill) if fields_to_fill else 0,
+                output_fields_count=len(fields_dictionary.fields) if hasattr(fields_dictionary, 'fields') else 0,
+                has_fields_dictionary=fields_dictionary is not None
             )
             
             # Step 3: Cross-validation
@@ -182,11 +216,28 @@ class PreprocessingPipeline:
             return preprocessed_data
             
         except Exception as e:
+            # Extract record_id and record_type safely - use try/except to be extra defensive
+            try:
+                if salesforce_data and isinstance(salesforce_data, dict):
+                    record_id = salesforce_data.get("record_id") or "unknown"
+                    record_type = salesforce_data.get("record_type") or "Claim"
+                elif salesforce_data:
+                    # Use getattr to safely access attributes (works for both Pydantic models and objects)
+                    record_id = getattr(salesforce_data, 'record_id', None) or "unknown"
+                    record_type = getattr(salesforce_data, 'record_type', None) or "Claim"
+                else:
+                    record_id = "unknown"
+                    record_type = "Claim"
+            except Exception as extract_err:
+                # If even extracting record_id fails, use defaults
+                record_id = "unknown"
+                record_type = "Claim"
+            
             safe_log(
                 logger,
                 logging.ERROR,
                 "Unexpected error in preprocessing pipeline",
-                record_id=salesforce_data.record_id if salesforce_data else "unknown",
+                record_id=record_id,
                 error_type=type(e).__name__,
                 error_message=str(e) if e else "Unknown error"
             )
@@ -196,12 +247,12 @@ class PreprocessingPipeline:
             empty_fields_dict = await temp_preprocessor.prepare_fields_dictionary([])
             
             return PreprocessedDataSchema(
-                record_id=salesforce_data.record_id if salesforce_data else "unknown",
-                record_type=salesforce_data.record_type if salesforce_data else "Claim",
+                record_id=record_id,
+                record_type=record_type,
                 processed_documents=[],
                 fields_dictionary=empty_fields_dict,
                 context_summary=ContextSummarySchema(
-                    record_type=salesforce_data.record_type if salesforce_data else "Claim",
+                    record_type=record_type,
                     objective="",
                     documents_available=[],
                     fields_to_extract=[],

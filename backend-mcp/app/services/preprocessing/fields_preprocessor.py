@@ -23,9 +23,15 @@ class FieldsDictionaryPreprocessor:
             "FieldsDictionaryPreprocessor initialized"
         )
     
+    def _get_field_attr(self, field: Any, attr: str, default: Any = None) -> Any:
+        """Safely get attribute from field (dict or object)"""
+        if isinstance(field, dict):
+            return field.get(attr, default)
+        return getattr(field, attr, default)
+    
     async def prepare_fields_dictionary(
         self,
-        fields_to_fill: List[FieldToFillResponseSchema],
+        fields_to_fill: List[Any],
         record_type: str = "Claim"
     ) -> FieldsDictionarySchema:
         """
@@ -70,18 +76,20 @@ class FieldsDictionaryPreprocessor:
                     enriched_field = await self.enrich_field_metadata(field, record_type)
                     enriched_fields.append(enriched_field)
                     
-                    # Categorize fields
-                    if field.value is None or not field.value.strip():
+                    # Categorize fields - get value safely
+                    field_value = self._get_field_attr(field, "value")
+                    if field_value is None or (isinstance(field_value, str) and not field_value.strip()):
                         empty_fields.append(enriched_field)
                     else:
                         prefilled_fields.append(enriched_field)
                         
                 except Exception as e:
+                    field_name = self._get_field_attr(field, "field_name", "unknown")
                     safe_log(
                         logger,
                         logging.ERROR,
                         "Error enriching field",
-                        field_name=field.field_name if field else "unknown",
+                        field_name=field_name,
                         error_type=type(e).__name__,
                         error_message=str(e) if e else "Unknown"
                     )
@@ -109,12 +117,14 @@ class FieldsDictionaryPreprocessor:
             return result
             
         except Exception as e:
+            import traceback
             safe_log(
                 logger,
                 logging.ERROR,
                 "Unexpected error in prepare_fields_dictionary",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown error"
+                error_message=str(e) if e else "Unknown error",
+                traceback=traceback.format_exc()
             )
             return FieldsDictionarySchema(
                 fields=[],
@@ -125,30 +135,41 @@ class FieldsDictionaryPreprocessor:
     
     async def enrich_field_metadata(
         self,
-        field: FieldToFillResponseSchema,
+        field: Any,
         record_type: str = "Claim"
     ) -> EnrichedFieldSchema:
         """
-        Enrich field with metadata and context.
+        Enrich field with metadata and context (can be dict or FieldToFillResponseSchema).
         
         Args:
-            field: Field to enrich
+            field: Field to enrich (dict or object)
             record_type: Type of record
             
         Returns:
             Enriched field schema
         """
         try:
+            # Get field attributes safely
+            field_type = self._get_field_attr(field, "field_type", "text")
+            field_name = self._get_field_attr(field, "field_name", "unknown")
+            field_value = self._get_field_attr(field, "value")
+            field_required = self._get_field_attr(field, "required")
+            if field_required is None:
+                field_required = True
+            field_label = self._get_field_attr(field, "label")
+            if not field_label:
+                field_label = field_name if field_name != "unknown" else "Unknown"
+            
             # Get template for record type
-            template = self._get_field_template(field.field_type, record_type)
+            template = self._get_field_template(field_type, record_type)
             
             # Build enriched field
             enriched = EnrichedFieldSchema(
-                field_name=field.field_name if field.field_name else "unknown",
-                field_type=field.field_type if field.field_type else "text",
-                value=field.value,
-                required=field.required if field.required is not None else True,
-                label=field.label if field.label else field.field_name if field.field_name else "Unknown",
+                field_name=field_name,
+                field_type=field_type,
+                value=field_value,
+                required=field_required,
+                label=field_label,
                 description=template.get("description", ""),
                 expected_format=template.get("format", ""),
                 examples=template.get("examples", []),
@@ -159,21 +180,26 @@ class FieldsDictionaryPreprocessor:
             return enriched
             
         except Exception as e:
+            field_name = self._get_field_attr(field, "field_name", "unknown")
+            field_type = self._get_field_attr(field, "field_type", "text")
+            field_value = self._get_field_attr(field, "value")
+            field_required = self._get_field_attr(field, "required", True)
+            field_label = self._get_field_attr(field, "label", "Unknown")
             safe_log(
                 logger,
                 logging.ERROR,
                 "Error enriching field metadata",
-                field_name=field.field_name if field else "unknown",
+                field_name=field_name,
                 error_type=type(e).__name__,
                 error_message=str(e) if e else "Unknown"
             )
             # Return minimal enriched field on error
             return EnrichedFieldSchema(
-                field_name=field.field_name if field else "unknown",
-                field_type=field.field_type if field else "text",
-                value=field.value if field else None,
-                required=field.required if field else True,
-                label=field.label if field else "Unknown",
+                field_name=field_name,
+                field_type=field_type,
+                value=field_value,
+                required=field_required,
+                label=field_label,
                 description="",
                 expected_format="",
                 examples=[],

@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
 import traceback
+import json
 
 from app.core.logging import get_logger, safe_log
 from app.core.exceptions import SessionStorageError, SessionNotFoundError, InvalidRequestError
@@ -10,8 +11,15 @@ from app.services.session_storage import SessionStorage
 from app.models.schemas import (
     SalesforceDataResponseSchema,
     SessionContextSchema,
-    ConversationMessageSchema
+    ConversationMessageSchema,
+    SessionInputDataSchema,
+    LanggraphResponseDataSchema,
+    InteractionHistoryItemSchema,
+    InteractionRequestSchema,
+    InteractionResponseSchema,
+    ProcessingMetadataSchema
 )
+import uuid
 
 logger = get_logger(__name__)
 
@@ -71,21 +79,32 @@ class SessionManager:
             
             record_id = record_id.strip()
             
-            # Create initial context
-            context = {
+            # Create initial input_data with refactored structure
+            now = datetime.utcnow().isoformat()
+            input_data = {
                 "salesforce_data": salesforce_data.model_dump(mode='json'),
-                "conversation_history": [],
-                "extracted_data": {},
+                "user_message": "",  # Will be set when user sends a message
+                "context": {
+                    "documents": [doc.model_dump(mode='json') for doc in salesforce_data.documents],
+                    "fields": [field.model_dump(mode='json') for field in salesforce_data.fields_to_fill],
+                    "session_id": None  # Will be set after creation
+                },
                 "metadata": {
-                    "preprocessing_completed": False,
-                    "prompt_built": False,
-                    "langgraph_processed": False
-                }
+                    "record_id": record_id,
+                    "record_type": salesforce_data.record_type,
+                    "timestamp": now
+                },
+                "prompt": None,
+                "timestamp": now
             }
             
             # Create session via storage
             try:
-                session_id = self.storage.create_session(record_id, context)
+                session_id = self.storage.create_session(record_id, input_data)
+                
+                # Update input_data with session_id
+                input_data["context"]["session_id"] = session_id
+                self.storage.update_session(session_id, {"input_data": input_data})
             except SessionStorageError as e:
                 safe_log(
                     logger,
@@ -138,7 +157,7 @@ class SessionManager:
             if not session_id or not session_id.strip():
                 safe_log(
                     logger,
-                    logger.DEBUG,
+                    logging.DEBUG,
                     "Empty session_id in check_session_exists",
                     session_id=session_id or "none"
                 )
@@ -153,7 +172,7 @@ class SessionManager:
             
             safe_log(
                 logger,
-                logger.DEBUG,
+                logging.DEBUG,
                 "Session existence checked",
                 session_id=session_id,
                 exists=exists
@@ -230,34 +249,30 @@ class SessionManager:
             if not session:
                 safe_log(
                     logger,
-                    logger.WARNING,
+                    logging.WARNING,
                     "Session not found for appending message",
                     session_id=session_id
                 )
                 return False
             
-            # Get conversation history
-            context = session.get("context", {})
-            conversation_history = context.get("conversation_history", [])
+            # Create interaction for history
+            now = datetime.utcnow().isoformat()
+            interaction_id = str(uuid.uuid4())
             
-            # Create new message
-            new_message = {
-                "role": role,
-                "message": message,
-                "timestamp": datetime.utcnow().isoformat()
+            interaction = {
+                "interaction_id": interaction_id,
+                "request": {
+                    "user_message": message if role == "user" else "",
+                    "prompt": None,  # Will be set when prompt is built
+                    "timestamp": now
+                },
+                "response": None,  # Will be set when langgraph responds
+                "processing_time": None,
+                "status": "pending"
             }
             
-            # Append to history
-            conversation_history.append(new_message)
-            
-            # Update session
-            updates = {
-                "context": {
-                    "conversation_history": conversation_history
-                }
-            }
-            
-            success = self.storage.update_session(session_id, updates)
+            # Add interaction to history
+            success = self.storage.add_interaction_to_history(session_id, interaction)
             
             if success:
                 safe_log(
@@ -271,7 +286,7 @@ class SessionManager:
             else:
                 safe_log(
                     logger,
-                    logger.WARNING,
+                    logging.WARNING,
                     "Failed to update session when appending message",
                     session_id=session_id
                 )
@@ -307,7 +322,7 @@ class SessionManager:
             if not session_id or not session_id.strip():
                 safe_log(
                     logger,
-                    logger.WARNING,
+                    logging.WARNING,
                     "Empty session_id in get_session_context",
                     session_id=session_id or "none"
                 )
@@ -320,33 +335,23 @@ class SessionManager:
             if not session:
                 safe_log(
                     logger,
-                    logger.DEBUG,
+                    logging.DEBUG,
                     "Session not found for context retrieval",
                     session_id=session_id
                 )
                 return None
             
-            # Extract context
-            context = session.get("context")
-            if not context:
-                safe_log(
-                    logger,
-                    logger.WARNING,
-                    "Session has no context",
-                    session_id=session_id
-                )
-                return None
-            
+            # Return refactored session data structure
             safe_log(
                 logger,
-                logger.DEBUG,
-                "Session context retrieved",
+                logging.DEBUG,
+                "Session context retrieved with refactored structure",
                 session_id=session_id,
                 record_id=session.get("record_id") or "unknown",
-                history_length=len(context.get("conversation_history", []))
+                interactions_count=len(session.get("interactions_history", []))
             )
             
-            return context
+            return session
             
         except Exception as e:
             safe_log(
@@ -376,7 +381,7 @@ class SessionManager:
             if not session_id or not session_id.strip():
                 safe_log(
                     logger,
-                    logger.WARNING,
+                    logging.WARNING,
                     "Empty session_id in extend_session_ttl",
                     session_id=session_id or "none"
                 )
@@ -398,7 +403,7 @@ class SessionManager:
             else:
                 safe_log(
                     logger,
-                    logger.WARNING,
+                    logging.WARNING,
                     "Failed to extend session TTL",
                     session_id=session_id
                 )

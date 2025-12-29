@@ -27,8 +27,12 @@ def get_session_manager() -> SessionManager:
     global _session_manager
     if _session_manager is None:
         try:
+            # Check for SESSION_DB_PATH environment variable (used in Docker)
+            import os
+            db_path = os.getenv("SESSION_DB_PATH", settings.session_db_path)
+            
             storage = SessionStorage(
-                db_path=settings.session_db_path,
+                db_path=db_path,
                 default_ttl=settings.session_ttl_seconds
             )
             _session_manager = SessionManager(storage)

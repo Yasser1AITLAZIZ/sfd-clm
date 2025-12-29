@@ -4,32 +4,96 @@ services:
   mock-salesforce:
     build:
       context: ./mock-salesforce
+      dockerfile: Dockerfile
+    container_name: sfd-clm-mock-salesforce
     ports:
       - "8001:8000"
     environment:
       - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
     volumes:
-      - ./mock-salesforce:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ./mock-salesforce/app:/app/app
+      - mock_salesforce_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - sfd-clm-network
 
   backend-mcp:
     build:
       context: ./backend-mcp
+      dockerfile: Dockerfile
+    container_name: sfd-clm-backend-mcp
     ports:
       - "8000:8000"
     environment:
       - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
       - MOCK_SALESFORCE_URL=http://mock-salesforce:8000
       - SALESFORCE_REQUEST_TIMEOUT=5
       - SESSION_DB_PATH=/app/data/sessions.db
       - SESSION_TTL_SECONDS=86400
+      - langgraph_url=http://backend-langgraph:8002
+      - langgraph_timeout=30.0
+      - TIMEOUT_BASE=30.0
+      - TIMEOUT_PER_FIELD=0.5
+      - TIMEOUT_PER_DOCUMENT=10.0
+      - TIMEOUT_MAX=300.0
+      - PREPROCESSING_TIMEOUT=10.0
+      - OCR_TIMEOUT_PER_PAGE=60.0
+      - LLM_EXTRACTION_TIMEOUT=120.0
+      - VALIDATION_TIMEOUT=30.0
     volumes:
-      - ./backend-mcp:/app
-      - backend_mcp_data:/app/data
+      - ./backend-mcp/app:/app/app
+      - ./backend-mcp/data:/app/data
     depends_on:
-      - mock-salesforce
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      mock-salesforce:
+        condition: service_healthy
+      backend-langgraph:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - sfd-clm-network
+
+  backend-langgraph:
+    build:
+      context: ./backend-langgraph
+      dockerfile: Dockerfile
+    container_name: sfd-clm-backend-langgraph
+    ports:
+      - "8002:8002"
+    environment:
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+      - MOCK_MODE=true
+    volumes:
+      - ./backend-langgraph/app:/app/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - sfd-clm-network
 
 volumes:
   backend_mcp_data:
+  mock_salesforce_data:
+
+networks:
+  sfd-clm-network:
+    driver: bridge
 

@@ -8,10 +8,10 @@ $killed = $false
 
 foreach ($port in $ports) {
     $processes = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
-    foreach ($pid in $processes) {
-        if ($pid) {
-            Write-Host "Killing process on port $port (PID: $pid)" -ForegroundColor Yellow
-            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+    foreach ($processId in $processes) {
+        if ($processId) {
+            Write-Host "Killing process on port $port (PID: $processId)" -ForegroundColor Yellow
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
             $killed = $true
         }
     }

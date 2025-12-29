@@ -12,12 +12,15 @@ from app.core.exceptions import (
     SessionNotFoundError,
     WorkflowError
 )
-from app.services.session_router import validate_and_route
+from app.services.session_router import validate_and_route, get_session_manager
 from app.services.preprocessing.preprocessing_pipeline import PreprocessingPipeline
 from app.services.prompting.prompt_builder import PromptBuilder
 from app.services.prompting.prompt_optimizer import PromptOptimizer
 from app.services.mcp.mcp_message_formatter import MCPMessageFormatter
 from app.services.mcp.mcp_sender import MCPSender
+from app.services.workflow_step_storage import WorkflowStepStorage
+from app.core.config import settings
+import uuid
 from app.models.schemas import (
     WorkflowRequestSchema,
     WorkflowResponseSchema,
@@ -25,6 +28,82 @@ from app.models.schemas import (
 )
 
 logger = get_logger(__name__)
+
+
+def extract_fields_from_preprocessed_data(preprocessed_data: Any) -> list:
+    """
+    Extract fields from preprocessed_data (handles both Pydantic and dict).
+    Converts Pydantic field objects to dicts for serialization.
+    
+    Args:
+        preprocessed_data: PreprocessedDataSchema object or dict
+        
+    Returns:
+        List of fields (as dicts)
+    """
+    if not preprocessed_data:
+        return []
+    
+    # If it's a Pydantic model, convert to dict
+    if hasattr(preprocessed_data, 'model_dump'):
+        data = preprocessed_data.model_dump()
+    elif isinstance(preprocessed_data, dict):
+        data = preprocessed_data
+    else:
+        # Try to access as attribute
+        if hasattr(preprocessed_data, 'fields_dictionary'):
+            fields_dict = preprocessed_data.fields_dictionary
+            if hasattr(fields_dict, 'fields'):
+                fields = fields_dict.fields
+                # Convert Pydantic objects to dicts
+                return [field.model_dump() if hasattr(field, 'model_dump') else (field.__dict__ if hasattr(field, '__dict__') else field) for field in fields]
+            elif hasattr(fields_dict, 'model_dump'):
+                fields_dict_data = fields_dict.model_dump()
+                return fields_dict_data.get("fields", [])
+        return []
+    
+    # Extract from dict
+    fields_dict = data.get("fields_dictionary", {})
+    if isinstance(fields_dict, dict):
+        fields = fields_dict.get("fields", [])
+        # Convert Pydantic objects to dicts if needed
+        return [field.model_dump() if hasattr(field, 'model_dump') else (field.__dict__ if hasattr(field, '__dict__') and not isinstance(field, dict) else field) for field in fields]
+    elif hasattr(fields_dict, 'fields'):
+        fields = fields_dict.fields
+        # Convert Pydantic objects to dicts
+        return [field.model_dump() if hasattr(field, 'model_dump') else (field.__dict__ if hasattr(field, '__dict__') else field) for field in fields]
+    elif hasattr(fields_dict, 'model_dump'):
+        fields_dict_data = fields_dict.model_dump()
+        return fields_dict_data.get("fields", [])
+    return []
+
+
+def extract_documents_from_preprocessed_data(preprocessed_data: Any) -> list:
+    """
+    Extract documents from preprocessed_data (handles both Pydantic and dict).
+    
+    Args:
+        preprocessed_data: PreprocessedDataSchema object or dict
+        
+    Returns:
+        List of documents
+    """
+    if not preprocessed_data:
+        return []
+    
+    # If it's a Pydantic model, convert to dict
+    if hasattr(preprocessed_data, 'model_dump'):
+        data = preprocessed_data.model_dump()
+    elif isinstance(preprocessed_data, dict):
+        data = preprocessed_data
+    else:
+        # Try to access as attribute
+        if hasattr(preprocessed_data, 'processed_documents'):
+            return preprocessed_data.processed_documents
+        return []
+    
+    # Extract from dict
+    return data.get("processed_documents", [])
 
 
 class WorkflowOrchestrator:
@@ -38,11 +117,98 @@ class WorkflowOrchestrator:
         self.mcp_formatter = MCPMessageFormatter()
         self.mcp_sender = MCPSender()
         
+        # Initialize workflow step storage
+        try:
+            self.step_storage = WorkflowStepStorage(settings.session_db_path)
+        except Exception as e:
+            safe_log(
+                logger,
+                logging.WARNING,
+                "Failed to initialize WorkflowStepStorage, workflow steps will not be tracked",
+                error_type=type(e).__name__,
+                error_message=str(e) if e else "Unknown"
+            )
+            self.step_storage = None
+        
+        # Verify methods exist at runtime
+        if not hasattr(self.prompt_builder, 'build_prompt'):
+            safe_log(
+                logger,
+                logging.ERROR,
+                "PromptBuilder.build_prompt method not found! Available methods: " + str([m for m in dir(self.prompt_builder) if not m.startswith('_')])
+            )
+        if not hasattr(self.prompt_optimizer, 'optimize_prompt'):
+            safe_log(
+                logger,
+                logging.ERROR,
+                "PromptOptimizer.optimize_prompt method not found! Available methods: " + str([m for m in dir(self.prompt_optimizer) if not m.startswith('_')])
+            )
+        
         safe_log(
             logger,
             logging.INFO,
             "WorkflowOrchestrator initialized"
         )
+    
+    def _create_step_record(
+        self,
+        session_id: str,
+        workflow_id: str,
+        step_name: str,
+        step_order: int,
+        input_data: Optional[Dict[str, Any]] = None
+    ) -> Optional[str]:
+        """Helper method to create a workflow step record"""
+        if not self.step_storage or session_id == "none":
+            return None
+        try:
+            step_id = self.step_storage.create_workflow_step(
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name=step_name,
+                step_order=step_order,
+                input_data=input_data
+            )
+            return step_id
+        except Exception as e:
+            safe_log(
+                logger,
+                logging.WARNING,
+                f"Failed to create workflow step for {step_name}",
+                error_type=type(e).__name__,
+                error_message=str(e) if e else "Unknown"
+            )
+            return None
+    
+    def _update_step_record(
+        self,
+        step_id: Optional[str],
+        status: str,
+        output_data: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None,
+        error_details: Optional[Dict[str, Any]] = None,
+        processing_time: Optional[float] = None
+    ):
+        """Helper method to update a workflow step record"""
+        if not self.step_storage or not step_id:
+            return
+        try:
+            self.step_storage.update_workflow_step(
+                step_id=step_id,
+                status=status,
+                output_data=output_data,
+                error_message=error_message,
+                error_details=error_details,
+                processing_time=processing_time
+            )
+        except Exception as e:
+            safe_log(
+                logger,
+                logging.WARNING,
+                f"Failed to update workflow step {step_id}",
+                error_type=type(e).__name__,
+                error_message=str(e) if e else "Unknown"
+            )
     
     async def execute_workflow(
         self,
@@ -99,6 +265,23 @@ class WorkflowOrchestrator:
             # Step 1: Validation & Routing
             step_start_time = time.time()
             workflow_state["current_step"] = "validation_routing"
+            step_id_1 = None
+            
+            # Create workflow step record
+            step_id_1 = self._create_step_record(
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name="validation_routing",
+                step_order=1,
+                input_data={
+                    "record_id": record_id,
+                    "user_message": request_data.get("user_message", ""),
+                    "session_id": session_id
+                }
+            )
+            if step_id_1:
+                self._update_step_record(step_id_1, "in_progress")
+            
             log_progress(
                 logger,
                 logging.INFO,
@@ -125,6 +308,15 @@ class WorkflowOrchestrator:
                 workflow_state["steps_completed"].append("validation_routing")
                 
                 step_elapsed = time.time() - step_start_time
+                
+                # Update workflow step record
+                self._update_step_record(
+                    step_id_1,
+                    "completed",
+                    output_data={"status": routing_result.get("status", "unknown")},
+                    processing_time=step_elapsed
+                )
+                
                 log_timing(
                     logger,
                     logging.INFO,
@@ -142,6 +334,21 @@ class WorkflowOrchestrator:
                     "error_type": type(e).__name__
                 })
                 workflow_state["status"] = "failed"
+                
+                # Update workflow step record with error
+                if self.step_storage and step_id_1:
+                    try:
+                        step_elapsed = time.time() - step_start_time
+                        self.step_storage.update_workflow_step(
+                            step_id_1,
+                            "failed",
+                            error_message=error_msg,
+                            error_details={"error_type": type(e).__name__},
+                            processing_time=step_elapsed
+                        )
+                    except Exception:
+                        pass
+                
                 safe_log(
                     logger,
                     logging.ERROR,
@@ -160,6 +367,17 @@ class WorkflowOrchestrator:
                     "error_type": type(e).__name__
                 })
                 workflow_state["status"] = "failed"
+                
+                # Update workflow step record with error
+                step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_1,
+                    "failed",
+                    error_message=error_msg,
+                    error_details={"error_type": type(e).__name__},
+                    processing_time=step_elapsed
+                )
+                
                 safe_log(
                     logger,
                     logging.ERROR,
@@ -179,6 +397,19 @@ class WorkflowOrchestrator:
                 # Step 2: Preprocessing
                 step_start_time = time.time()
                 workflow_state["current_step"] = "preprocessing"
+                step_id_2 = self._create_step_record(
+                    session_id=session_id,
+                    workflow_id=workflow_id,
+                    step_name="preprocessing",
+                    step_order=2,
+                    input_data={
+                        "record_id": record_id,
+                        "salesforce_data": routing_result.get("salesforce_data", {})
+                    }
+                )
+                if step_id_2:
+                    self._update_step_record(step_id_2, "in_progress")
+                
                 log_progress(
                     logger,
                     logging.INFO,
@@ -200,6 +431,12 @@ class WorkflowOrchestrator:
                         }
                         workflow_state["steps_completed"].append("preprocessing")
                         step_elapsed = time.time() - step_start_time
+                        self._update_step_record(
+                            step_id_2,
+                            "completed",
+                            output_data={"status": "completed"},
+                            processing_time=step_elapsed
+                        )
                         log_timing(
                             logger,
                             logging.INFO,
@@ -232,10 +469,28 @@ class WorkflowOrchestrator:
                         "error": error_msg
                     }
                     workflow_state["steps_completed"].append("preprocessing")
+                    step_elapsed = time.time() - step_start_time
+                    self._update_step_record(
+                        step_id_2,
+                        "failed",
+                        error_message=error_msg,
+                        error_details={"error_type": type(e).__name__},
+                        processing_time=step_elapsed
+                    )
                 
             elif routing_status == "continuation":
                 # Existing session: skip preprocessing
                 workflow_state["current_step"] = "preprocessing"
+                step_id_2 = self._create_step_record(
+                    session_id=session_id,
+                    workflow_id=workflow_id,
+                    step_name="preprocessing",
+                    step_order=2,
+                    input_data={"record_id": record_id}
+                )
+                if step_id_2:
+                    self._update_step_record(step_id_2, "completed", output_data={"status": "skipped", "reason": "continuation_flow"})
+                
                 log_progress(
                     logger,
                     logging.INFO,
@@ -255,6 +510,20 @@ class WorkflowOrchestrator:
             # Step 3: Prompt Building
             step_start_time = time.time()
             workflow_state["current_step"] = "prompt_building"
+            step_id_3 = self._create_step_record(
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name="prompt_building",
+                step_order=3,
+                input_data={
+                    "record_id": record_id,
+                    "user_message": request_data.get("user_message", ""),
+                    "preprocessed_data": workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
+                }
+            )
+            if step_id_3:
+                self._update_step_record(step_id_3, "in_progress")
+            
             log_progress(
                 logger,
                 logging.INFO,
@@ -273,11 +542,66 @@ class WorkflowOrchestrator:
                     preprocessed_data = {}
                 
                 user_message = request_data.get("user_message", "")
-                prompt_result = await self.prompt_builder.build_prompt(
-                    user_message=user_message,
-                    preprocessed_data=preprocessed_data,
-                    routing_status=routing_status
-                )
+                # Try to call build_prompt, with fallback if method doesn't exist
+                # Use getattr with default to safely check and call the method
+                build_prompt_method = getattr(self.prompt_builder, 'build_prompt', None)
+                if build_prompt_method and callable(build_prompt_method):
+                    prompt_result = await build_prompt_method(
+                        user_message=user_message,
+                        preprocessed_data=preprocessed_data,
+                        routing_status=routing_status
+                    )
+                else:
+                    # Fallback: use build_initialization_prompt if build_prompt doesn't exist
+                    safe_log(
+                        logger,
+                        logging.WARNING,
+                        "build_prompt method not found, using fallback",
+                        workflow_id=workflow_id,
+                        available_methods=str([m for m in dir(self.prompt_builder) if not m.startswith('_')])
+                    )
+                    # Try to create a minimal PreprocessedDataSchema for fallback
+                    from app.models.schemas import PreprocessedDataSchema, ContextSummarySchema
+                    if isinstance(preprocessed_data, dict):
+                        fallback_preprocessed = PreprocessedDataSchema(
+                            record_id=preprocessed_data.get("record_id", "unknown"),
+                            record_type=preprocessed_data.get("record_type", "Claim"),
+                            processed_documents=preprocessed_data.get("processed_documents", []),
+                            fields_dictionary=preprocessed_data.get("fields_dictionary", {}),
+                            context_summary=ContextSummarySchema(
+                                record_type=preprocessed_data.get("record_type", "Claim"),
+                                objective="",
+                                documents_available=[],
+                                fields_to_extract=[],
+                                business_rules=[]
+                            ),
+                            validation_results={"passed": False, "errors": []},
+                            metrics={}
+                        )
+                    else:
+                        fallback_preprocessed = preprocessed_data if preprocessed_data else PreprocessedDataSchema(
+                            record_id="unknown",
+                            record_type="Claim",
+                            processed_documents=[],
+                            fields_dictionary={},
+                            context_summary=ContextSummarySchema(
+                                record_type="Claim",
+                                objective="",
+                                documents_available=[],
+                                fields_to_extract=[],
+                                business_rules=[]
+                            ),
+                            validation_results={"passed": False, "errors": []},
+                            metrics={}
+                        )
+                    prompt_response = await self.prompt_builder.build_initialization_prompt(
+                        fallback_preprocessed,
+                        user_message
+                    )
+                    prompt_result = {
+                        "prompt": prompt_response.prompt if prompt_response.prompt else user_message,
+                        "scenario_type": prompt_response.scenario_type if prompt_response.scenario_type else "extraction"
+                    }
                 
                 workflow_state["data"]["prompt_building"] = {
                     "status": "completed",
@@ -286,6 +610,15 @@ class WorkflowOrchestrator:
                 }
                 workflow_state["steps_completed"].append("prompt_building")
                 step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_3,
+                    "completed",
+                    output_data={
+                        "status": "completed",
+                        "prompt": prompt_result.get("prompt", "")[:500] if prompt_result.get("prompt") else None
+                    },
+                    processing_time=step_elapsed
+                )
                 log_timing(
                     logger,
                     logging.INFO,
@@ -317,10 +650,30 @@ class WorkflowOrchestrator:
                     "scenario_type": "extraction"
                 }
                 workflow_state["steps_completed"].append("prompt_building")
+                step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_3,
+                    "completed",
+                    output_data={"status": "completed", "prompt": request_data.get("user_message", "")[:500]},
+                    processing_time=step_elapsed
+                )
             
             # Step 4: Prompt Optimization
             step_start_time = time.time()
             workflow_state["current_step"] = "prompt_optimization"
+            step_id_4 = self._create_step_record(
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name="prompt_optimization",
+                step_order=4,
+                input_data={
+                    "record_id": record_id,
+                    "prompt": workflow_state["data"]["prompt_building"].get("prompt", "")
+                }
+            )
+            if step_id_4:
+                self._update_step_record(step_id_4, "in_progress")
+            
             log_progress(
                 logger,
                 logging.INFO,
@@ -333,7 +686,31 @@ class WorkflowOrchestrator:
             
             try:
                 prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
-                optimized_prompt = await self.prompt_optimizer.optimize_prompt(prompt)
+                # Try to call optimize_prompt, with fallback if method doesn't exist
+                # Use getattr with default to safely check and call the method
+                optimize_prompt_method = getattr(self.prompt_optimizer, 'optimize_prompt', None)
+                if optimize_prompt_method and callable(optimize_prompt_method):
+                    optimized_prompt = await optimize_prompt_method(prompt)
+                else:
+                    # Fallback: use optimize method if optimize_prompt doesn't exist
+                    safe_log(
+                        logger,
+                        logging.WARNING,
+                        "optimize_prompt method not found, using fallback",
+                        workflow_id=workflow_id,
+                        available_methods=str([m for m in dir(self.prompt_optimizer) if not m.startswith('_')])
+                    )
+                    from app.models.schemas import PromptResponseSchema
+                    prompt_response = PromptResponseSchema(
+                        prompt=prompt,
+                        scenario_type="extraction",
+                        metadata={}
+                    )
+                    optimized_result = await self.prompt_optimizer.optimize(prompt_response)
+                    optimized_prompt = {
+                        "prompt": optimized_result.prompt if optimized_result.prompt else prompt,
+                        "optimizations_applied": optimized_result.optimizations_applied if optimized_result.optimizations_applied else []
+                    }
                 
                 workflow_state["data"]["prompt_optimization"] = {
                     "status": "completed",
@@ -342,6 +719,15 @@ class WorkflowOrchestrator:
                 }
                 workflow_state["steps_completed"].append("prompt_optimization")
                 step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_4,
+                    "completed",
+                    output_data={
+                        "status": "completed",
+                        "optimized_prompt": optimized_prompt.get("prompt", "")[:500] if optimized_prompt.get("prompt") else None
+                    },
+                    processing_time=step_elapsed
+                )
                 log_timing(
                     logger,
                     logging.INFO,
@@ -369,10 +755,97 @@ class WorkflowOrchestrator:
                     "optimizations_applied": []
                 }
                 workflow_state["steps_completed"].append("prompt_optimization")
+                step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_4,
+                    "completed",
+                    output_data={"status": "completed", "optimized_prompt": prompt[:500]},
+                    processing_time=step_elapsed
+                )
             
             # Step 5: MCP Formatting
             step_start_time = time.time()
             workflow_state["current_step"] = "mcp_formatting"
+            
+            # Prepare context for MCP (before creating step record)
+            optimized_prompt = workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
+            preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
+            
+            # Get fields from preprocessed_data using helper function
+            fields = extract_fields_from_preprocessed_data(preprocessed_data)
+            
+            # Log diagnostic information
+            safe_log(
+                logger,
+                logging.INFO,
+                "Extracting fields from preprocessed_data",
+                workflow_id=workflow_id,
+                preprocessed_data_type=type(preprocessed_data).__name__,
+                fields_count=len(fields),
+                has_preprocessed_data=preprocessed_data is not None
+            )
+            
+            if not fields:
+                # Fallback: get fields from salesforce_data in routing_result
+                salesforce_data = routing_result.get("salesforce_data", {})
+                if salesforce_data:
+                    # Handle both Pydantic model and dict
+                    if hasattr(salesforce_data, 'fields_to_fill'):
+                        fields = salesforce_data.fields_to_fill
+                    elif isinstance(salesforce_data, dict):
+                        fields = salesforce_data.get("fields_to_fill", [])
+                    
+                    safe_log(
+                        logger,
+                        logging.INFO,
+                        "Using fallback fields from salesforce_data",
+                        workflow_id=workflow_id,
+                        fields_count=len(fields)
+                    )
+            
+            # Get documents from preprocessed_data using helper function
+            documents = extract_documents_from_preprocessed_data(preprocessed_data)
+            
+            if not documents:
+                # Fallback: get documents from salesforce_data in routing_result
+                salesforce_data = routing_result.get("salesforce_data", {})
+                if salesforce_data:
+                    # Handle both Pydantic model and dict
+                    if hasattr(salesforce_data, 'documents'):
+                        documents = salesforce_data.documents
+                    elif isinstance(salesforce_data, dict):
+                        documents = salesforce_data.get("documents", [])
+            
+            safe_log(
+                logger,
+                logging.INFO,
+                "Context prepared for MCP",
+                workflow_id=workflow_id,
+                fields_count=len(fields),
+                documents_count=len(documents)
+            )
+            
+            # Prepare context for MCP
+            context = {
+                "documents": documents,
+                "fields": fields,
+                "session_id": session_id if session_id != "none" else None
+            }
+            
+            step_id_5 = self._create_step_record(
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name="mcp_formatting",
+                step_order=5,
+                input_data={
+                    "record_id": record_id,
+                    "prompt": optimized_prompt,
+                    "context": context
+                }
+            )
+            if step_id_5:
+                self._update_step_record(step_id_5, "in_progress")
+            
             log_progress(
                 logger,
                 logging.INFO,
@@ -384,15 +857,6 @@ class WorkflowOrchestrator:
             )
             
             try:
-                optimized_prompt = workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
-                preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
-                
-                # Prepare context for MCP
-                context = {
-                    "documents": preprocessed_data.get("processed_documents", []),
-                    "fields": preprocessed_data.get("fields_dictionary", {}).get("fields", []),
-                    "session_id": session_id if session_id != "none" else None
-                }
                 
                 metadata = {
                     "record_id": record_id,
@@ -415,6 +879,12 @@ class WorkflowOrchestrator:
                 workflow_state["_mcp_message"] = mcp_message
                 workflow_state["steps_completed"].append("mcp_formatting")
                 step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_5,
+                    "completed",
+                    output_data={"status": "completed"},
+                    processing_time=step_elapsed
+                )
                 log_timing(
                     logger,
                     logging.INFO,
@@ -431,6 +901,14 @@ class WorkflowOrchestrator:
                     "error_type": type(e).__name__
                 })
                 workflow_state["status"] = "failed"
+                step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_5,
+                    "failed",
+                    error_message=error_msg,
+                    error_details={"error_type": type(e).__name__},
+                    processing_time=step_elapsed
+                )
                 safe_log(
                     logger,
                     logging.ERROR,
@@ -445,6 +923,19 @@ class WorkflowOrchestrator:
             # Step 6: MCP Sending
             step_start_time = time.time()
             workflow_state["current_step"] = "mcp_sending"
+            step_id_6 = self._create_step_record(
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name="mcp_sending",
+                step_order=6,
+                input_data={
+                    "record_id": record_id,
+                    "prompt": workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
+                }
+            )
+            if step_id_6:
+                self._update_step_record(step_id_6, "in_progress")
+            
             log_progress(
                 logger,
                 logging.INFO,
@@ -468,9 +959,36 @@ class WorkflowOrchestrator:
                     )
                     optimized_prompt = workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
                     preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
+                    
+                    # Get fields from preprocessed_data using helper function
+                    fields = extract_fields_from_preprocessed_data(preprocessed_data)
+                    
+                    if not fields:
+                        # Fallback: get fields from salesforce_data in routing_result
+                        salesforce_data = routing_result.get("salesforce_data", {})
+                        if salesforce_data:
+                            # Handle both Pydantic model and dict
+                            if hasattr(salesforce_data, 'fields_to_fill'):
+                                fields = salesforce_data.fields_to_fill
+                            elif isinstance(salesforce_data, dict):
+                                fields = salesforce_data.get("fields_to_fill", [])
+                    
+                    # Get documents from preprocessed_data using helper function
+                    documents = extract_documents_from_preprocessed_data(preprocessed_data)
+                    
+                    if not documents:
+                        # Fallback: get documents from salesforce_data in routing_result
+                        salesforce_data = routing_result.get("salesforce_data", {})
+                        if salesforce_data:
+                            # Handle both Pydantic model and dict
+                            if hasattr(salesforce_data, 'documents'):
+                                documents = salesforce_data.documents
+                            elif isinstance(salesforce_data, dict):
+                                documents = salesforce_data.get("documents", [])
+                    
                     context = {
-                        "documents": preprocessed_data.get("processed_documents", []),
-                        "fields": preprocessed_data.get("fields_dictionary", {}).get("fields", []),
+                        "documents": documents,
+                        "fields": fields,
                         "session_id": session_id if session_id != "none" else None
                     }
                     metadata = {
@@ -483,40 +1001,150 @@ class WorkflowOrchestrator:
                         context=context,
                         metadata=metadata
                     )
+                    
+                    # Store input_data in session before sending to langgraph
+                    if session_id and session_id != "none":
+                        try:
+                            session_manager = get_session_manager()
+                            # Get current session to update input_data
+                            session = session_manager.storage.get_session(session_id)
+                            if session:
+                                input_data = session.get("input_data", {})
+                                # Update input_data with current prompt and context
+                                input_data["prompt"] = optimized_prompt
+                                input_data["context"] = context
+                                input_data["metadata"] = metadata
+                                input_data["user_message"] = request_data.get("user_message", "")
+                                input_data["timestamp"] = datetime.utcnow().isoformat()
+                                
+                                # Update session with new input_data
+                                session_manager.storage.update_session(session_id, {"input_data": input_data})
+                                
+                                # Add interaction to history
+                                interaction_id = str(uuid.uuid4())
+                                interaction = {
+                                    "interaction_id": interaction_id,
+                                    "request": {
+                                        "user_message": request_data.get("user_message", ""),
+                                        "prompt": optimized_prompt,
+                                        "timestamp": datetime.utcnow().isoformat()
+                                    },
+                                    "response": None,
+                                    "processing_time": None,
+                                    "status": "pending"
+                                }
+                                session_manager.storage.add_interaction_to_history(session_id, interaction)
+                                
+                                # Store interaction_id in workflow_state for later update
+                                workflow_state["data"]["current_interaction_id"] = interaction_id
+                                
+                                safe_log(
+                                    logger,
+                                    logging.INFO,
+                                    "Input data stored in session before langgraph",
+                                    session_id=session_id,
+                                    interaction_id=interaction_id
+                                )
+                        except Exception as e:
+                            safe_log(
+                                logger,
+                                logging.WARNING,
+                                "Failed to store input_data in session",
+                                session_id=session_id,
+                                error_type=type(e).__name__,
+                                error_message=str(e) if e else "Unknown"
+                            )
+                            # Continue workflow even if storage fails
                 
                 mcp_response = await self.mcp_sender.send_to_langgraph(mcp_message, async_mode=False)
-                # #region agent log
-                import json as json_lib
-                import time
-                try:
-                    with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                        f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_mcp_response_received","timestamp":int(time.time()*1000),"location":"workflow_orchestrator.py:487","message":"MCP response received in workflow","data":{"has_extracted_data":hasattr(mcp_response,'extracted_data'),"extracted_data_count":len(mcp_response.extracted_data) if hasattr(mcp_response,'extracted_data') else 0,"extracted_data_keys":list(mcp_response.extracted_data.keys()) if hasattr(mcp_response,'extracted_data') and mcp_response.extracted_data else [],"status":mcp_response.status if hasattr(mcp_response,'status') else "unknown"},"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}) + "\n")
-                except: pass
-                # #endregion
+                
+                # Extract response data
+                extracted_data = mcp_response.extracted_data if hasattr(mcp_response, 'extracted_data') else {}
+                confidence_scores = mcp_response.confidence_scores if hasattr(mcp_response, 'confidence_scores') else {}
+                response_status = mcp_response.status if hasattr(mcp_response, 'status') else "unknown"
                 
                 workflow_state["data"]["mcp_sending"] = {
                     "status": "completed",
                     "mcp_response": {
-                        "extracted_data": mcp_response.extracted_data if hasattr(mcp_response, 'extracted_data') else {},
-                        "confidence_scores": mcp_response.confidence_scores if hasattr(mcp_response, 'confidence_scores') else {},
-                        "status": mcp_response.status if hasattr(mcp_response, 'status') else "unknown"
+                        "extracted_data": extracted_data,
+                        "confidence_scores": confidence_scores,
+                        "status": response_status
                     }
                 }
-                # #region agent log
-                try:
-                    with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                        f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_workflow_state_updated","timestamp":int(time.time()*1000),"location":"workflow_orchestrator.py:496","message":"Workflow state updated with mcp_response","data":{"mcp_response_extracted_data_count":len(workflow_state["data"]["mcp_sending"]["mcp_response"].get("extracted_data",{}))},"sessionId":"debug-session","runId":"run1","hypothesisId":"D"}) + "\n")
-                except: pass
-                # #endregion
+                
+                # Store langgraph response in session
+                if session_id and session_id != "none":
+                    try:
+                        session_manager = get_session_manager()
+                        step_elapsed = time.time() - step_start_time
+                        
+                        # Build langgraph response data
+                        langgraph_response = {
+                            "extracted_data": extracted_data,
+                            "confidence_scores": confidence_scores,
+                            "status": response_status,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "processing_time": step_elapsed
+                        }
+                        
+                        # Store response
+                        session_manager.store_langgraph_response(session_id, langgraph_response)
+                        
+                        # Update interaction in history with response
+                        interaction_id = workflow_state["data"].get("current_interaction_id")
+                        if interaction_id:
+                            session_manager.update_interaction_response(
+                                session_id=session_id,
+                                interaction_id=interaction_id,
+                                response=langgraph_response,
+                                processing_time=step_elapsed,
+                                status=response_status
+                            )
+                        
+                        # Update processing metadata
+                        session_manager.update_processing_metadata(session_id, {
+                            "langgraph_processed": True,
+                            "langgraph_processed_timestamp": datetime.utcnow().isoformat(),
+                            "workflow_id": workflow_id
+                        })
+                        
+                        safe_log(
+                            logger,
+                            logging.INFO,
+                            "Langgraph response stored in session",
+                            session_id=session_id,
+                            extracted_fields=len(extracted_data)
+                        )
+                    except Exception as e:
+                        safe_log(
+                            logger,
+                            logging.WARNING,
+                            "Failed to store langgraph response in session",
+                            session_id=session_id,
+                            error_type=type(e).__name__,
+                            error_message=str(e) if e else "Unknown"
+                        )
+                        # Continue workflow even if storage fails
+                
                 workflow_state["steps_completed"].append("mcp_sending")
                 step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_6,
+                    "completed",
+                    output_data={
+                        "extracted_data": extracted_data,
+                        "confidence_scores": confidence_scores,
+                        "status": response_status
+                    },
+                    processing_time=step_elapsed
+                )
                 log_timing(
                     logger,
                     logging.INFO,
                     "Step 6 completed: MCP Sending",
                     elapsed_time=step_elapsed,
                     workflow_id=workflow_id,
-                    extracted_fields=len(mcp_response.extracted_data if hasattr(mcp_response, 'extracted_data') else {})
+                    extracted_fields=len(extracted_data)
                 )
                 
             except Exception as e:
@@ -527,6 +1155,14 @@ class WorkflowOrchestrator:
                     "error_type": type(e).__name__
                 })
                 workflow_state["status"] = "failed"
+                step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_6,
+                    "failed",
+                    error_message=error_msg,
+                    error_details={"error_type": type(e).__name__},
+                    processing_time=step_elapsed
+                )
                 safe_log(
                     logger,
                     logging.ERROR,
@@ -541,6 +1177,19 @@ class WorkflowOrchestrator:
             # Step 7: Response Handling
             step_start_time = time.time()
             workflow_state["current_step"] = "response_handling"
+            step_id_7 = self._create_step_record(
+                session_id=session_id,
+                workflow_id=workflow_id,
+                step_name="response_handling",
+                step_order=7,
+                input_data={
+                    "record_id": record_id,
+                    "mcp_response": workflow_state["data"]["mcp_sending"].get("mcp_response", {})
+                }
+            )
+            if step_id_7:
+                self._update_step_record(step_id_7, "in_progress")
+            
             log_progress(
                 logger,
                 logging.INFO,
@@ -562,6 +1211,16 @@ class WorkflowOrchestrator:
                 }
                 workflow_state["steps_completed"].append("response_handling")
                 step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_7,
+                    "completed",
+                    output_data={
+                        "extracted_data": mcp_response_data.get("extracted_data", {}),
+                        "confidence_scores": mcp_response_data.get("confidence_scores", {}),
+                        "status": mcp_response_data.get("status", "success")
+                    },
+                    processing_time=step_elapsed
+                )
                 log_timing(
                     logger,
                     logging.INFO,
@@ -596,6 +1255,13 @@ class WorkflowOrchestrator:
                 }
                 workflow_state["steps_completed"].append("response_handling")
                 step_elapsed = time.time() - step_start_time
+                self._update_step_record(
+                    step_id_7,
+                    "completed",
+                    output_data={"status": "error"},
+                    error_message=error_msg,
+                    processing_time=step_elapsed
+                )
                 log_timing(
                     logger,
                     logging.WARNING,

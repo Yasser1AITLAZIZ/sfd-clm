@@ -12,6 +12,9 @@ from app.core.logging import get_logger, safe_log
 from app.core.config import settings
 from app.state import MCPAgentState, Document, PageOCR
 from app.utils.singletons import get_compiled_graph
+from app.utils.mock_data_generator import MockDataGenerator
+from app.utils.metrics import MetricsCollector
+from app.utils.memory_manager import MemoryManager
 
 logger = get_logger(__name__)
 
@@ -20,7 +23,7 @@ router = APIRouter()
 
 def generate_mock_extracted_data(fields_dictionary: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Generate mock extracted data based on fields_dictionary.
+    Generate intelligent mock extracted data with field relationships.
     
     Args:
         fields_dictionary: Dictionary of field definitions
@@ -28,79 +31,13 @@ def generate_mock_extracted_data(fields_dictionary: Dict[str, Any]) -> Dict[str,
     Returns:
         Dictionary of extracted field values
     """
-    extracted_data = {}
+    generator = MockDataGenerator()
+    extracted_data = generator.generate_extracted_data(fields_dictionary)
     
-    # Sample data generators based on field labels
-    sample_texts = {
-        "nom": "Jean Dupont",
-        "prénom": "Jean",
-        "adresse": "123 Rue de la Paix, 75001 Paris",
-        "téléphone": "+33 1 23 45 67 89",
-        "email": "jean.dupont@example.com",
-        "date": "2024-01-15",
-        "commentaire": "Ceci est un commentaire de test généré automatiquement pour simuler l'extraction de données depuis un document.",
-        "search": "Recherche effectuée avec succès"
-    }
+    # Validate consistency
+    validated_data = generator.validate_data_consistency(extracted_data, fields_dictionary)
     
-    for field_name, field_config in fields_dictionary.items():
-        field_type = field_config.get("type", "text").lower()
-        field_label = field_config.get("label", "").lower()
-        is_required = field_config.get("required", False)
-        possible_values = field_config.get("possibleValues", [])
-        default_value = field_config.get("defaultValue")
-        
-        # Skip optional fields 30% of the time
-        if not is_required and random.random() < 0.3:
-            extracted_data[field_name] = None
-            continue
-        
-        # Generate value based on type
-        if field_type in ["picklist", "radio"]:
-            # Select from possible values
-            if possible_values:
-                extracted_data[field_name] = random.choice(possible_values)
-            elif default_value:
-                extracted_data[field_name] = default_value
-            else:
-                extracted_data[field_name] = "Valeur par défaut"
-        
-        elif field_type == "number":
-            # Generate random number
-            if "taux" in field_label or "pourcentage" in field_label:
-                extracted_data[field_name] = round(random.uniform(0, 100), 2)
-            elif "nombre" in field_label:
-                extracted_data[field_name] = random.randint(1, 10)
-            else:
-                extracted_data[field_name] = random.randint(0, 10000)
-        
-        elif field_type == "textarea":
-            # Generate multi-line text
-            if "commentaire" in field_label:
-                extracted_data[field_name] = sample_texts.get("commentaire", "Commentaire généré automatiquement pour les tests.")
-            else:
-                extracted_data[field_name] = "Texte multi-lignes généré automatiquement.\nLigne 2 du texte.\nLigne 3 du texte."
-        
-        else:  # text or other
-            # Try to match label to sample data
-            value = None
-            for key, sample_value in sample_texts.items():
-                if key in field_label:
-                    value = sample_value
-                    break
-            
-            if value is None:
-                # Generate based on label
-                if "date" in field_label:
-                    value = "2024-01-15"
-                elif "numéro" in field_label or "n°" in field_label:
-                    value = f"{random.randint(1000, 9999)}"
-                else:
-                    # Use label as base for value
-                    value = f"Valeur pour {field_config.get('label', field_name)}"
-            
-            extracted_data[field_name] = value
-    
-    return extracted_data
+    return validated_data
 
 
 def generate_mock_confidence_scores(
@@ -193,15 +130,6 @@ async def mock_process_mcp_request(request: Request) -> JSONResponse:
         documents_data = body.get("documents", [])
         fields_dictionary = body.get("fields_dictionary", {})
         
-        # #region agent log
-        import json as json_lib
-        import time
-        try:
-            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_mock_received","timestamp":int(time.time()*1000),"location":"mcp.py:195","message":"Mock request received","data":{"record_id":record_id,"fields_dict_keys":list(fields_dictionary.keys()),"fields_dict_count":len(fields_dictionary)},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}) + "\n")
-        except: pass
-        # #endregion
-        
         # Validate required fields
         if not record_id or not record_id.strip():
             return JSONResponse(
@@ -223,7 +151,8 @@ async def mock_process_mcp_request(request: Request) -> JSONResponse:
             record_id=record_id,
             session_id=session_id or "none",
             documents_count=len(documents_data),
-            fields_count=len(fields_dictionary)
+            fields_count=len(fields_dictionary),
+            fields_dict_keys=list(fields_dictionary.keys())[:5] if fields_dictionary else []
         )
         
         # Simulate processing time (1-3 seconds)
@@ -232,21 +161,20 @@ async def mock_process_mcp_request(request: Request) -> JSONResponse:
         
         # Generate mock extracted data
         extracted_data = generate_mock_extracted_data(fields_dictionary)
-        # #region agent log
-        try:
-            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_mock_data_generated","timestamp":int(time.time()*1000),"location":"mcp.py:220","message":"Mock extracted data generated","data":{"extracted_data_keys":list(extracted_data.keys()),"extracted_data_count":len(extracted_data),"sample_data":dict(list(extracted_data.items())[:3])},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}) + "\n")
-        except: pass
-        # #endregion
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Mock extracted data generated",
+            request_id=request_id,
+            fields_dict_count=len(fields_dictionary),
+            fields_dict_keys=list(fields_dictionary.keys())[:10] if fields_dictionary else [],
+            extracted_data_count=len(extracted_data),
+            extracted_data_keys=list(extracted_data.keys())[:10] if extracted_data else []
+        )
         
         # Generate mock confidence scores
         confidence_scores = generate_mock_confidence_scores(extracted_data, fields_dictionary)
-        # #region agent log
-        try:
-            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_mock_response_built","timestamp":int(time.time()*1000),"location":"mcp.py:268","message":"Mock response built","data":{"extracted_data_count":len(extracted_data),"confidence_scores_count":len(confidence_scores),"quality_score":quality_score,"response_status":"success"},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"}) + "\n")
-        except: pass
-        # #endregion
         
         # Calculate quality score (average of confidence scores)
         if confidence_scores:
@@ -358,26 +286,8 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         }
     }
     """
-    # #region agent log
-    import json as json_lib
-    import time
-    import os
-    try:
-        with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_check_mock_mode","timestamp":int(time.time()*1000),"location":"mcp.py:361","message":"Checking mock_mode setting","data":{"mock_mode":settings.mock_mode,"mock_mode_type":type(settings.mock_mode).__name__,"env_mock_mode":os.getenv("MOCK_MODE","not_set")},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}) + "\n")
-    except Exception as e:
-        # Log to stderr if file write fails
-        import sys
-        print(f"DEBUG LOG ERROR: {e}", file=sys.stderr)
-    # #endregion
     # Check if mock mode is enabled
     if settings.mock_mode:
-        # #region agent log
-        try:
-            with open(r'c:\Users\YasserAITLAZIZ\sfd-clm\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json_lib.dumps({"id":f"log_{int(time.time()*1000)}_using_mock","timestamp":int(time.time()*1000),"location":"mcp.py:309","message":"Using mock mode","data":{},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}) + "\n")
-        except: pass
-        # #endregion
         return await mock_process_mcp_request(request)
     
     # Original LangGraph processing
@@ -478,6 +388,11 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         from langchain_core.messages import HumanMessage
         initial_state.messages.append(HumanMessage(content=user_request))
         
+        # Initialize metrics collector
+        metrics = MetricsCollector(request_id=request_id)
+        memory_manager = MemoryManager()
+        memory_manager.log_memory_usage("before processing")
+        
         # Get compiled graph and execute
         graph = get_compiled_graph()
         
@@ -489,13 +404,35 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             record_id=record_id
         )
         
+        metrics.start_step("total_processing")
         start_time = datetime.utcnow()
         
         # Execute graph
         config = {"configurable": {"thread_id": f"{record_id}_{session_id or 'new'}"}}
         final_state = await graph.ainvoke(initial_state, config)
         
+        metrics.end_step("total_processing")
         execution_time = (datetime.utcnow() - start_time).total_seconds()
+        
+        # Record field success rates
+        for field_name, value in final_state.extracted_data.items():
+            confidence = final_state.confidence_scores.get(field_name, 0.0)
+            metrics.record_field_success(field_name, value is not None, confidence)
+        
+        # Record final memory usage
+        memory_info = memory_manager.get_memory_usage()
+        if memory_info:
+            metrics.record_memory_usage(memory_info)
+        memory_manager.log_memory_usage("after processing")
+        
+        # Get metrics summary and store
+        metrics_summary = metrics.get_summary()
+        full_metrics = metrics.get_full_metrics()
+        metrics.log_summary()
+        
+        # Store metrics for later retrieval
+        from app.api.v1.endpoints.metrics import store_metrics
+        store_metrics(request_id, full_metrics)
         
         safe_log(
             logger,
@@ -516,7 +453,8 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             "field_mappings": final_state.field_mappings,
             "processing_time": execution_time,
             "ocr_text_length": len(final_state.ocr_text or ""),
-            "text_blocks_count": len(final_state.text_blocks)
+            "text_blocks_count": len(final_state.text_blocks),
+            "metrics": metrics_summary
         }
         
         return JSONResponse(

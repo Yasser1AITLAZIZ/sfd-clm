@@ -10,4 +10,23 @@ ocr_mapping_tool:
   model: "gpt-4.1-2025-04-14"
   temperature: 0.0
   concurrency_limit: 12
+  timeout_s: 60  # Default timeout for OCR per page
+  ocr_timeout_per_page: 60.0  # Timeout per page for OCR
+  llm_extraction_timeout: 120.0  # Timeout for LLM extraction
+
+limits:
+  # Text blocks limits
+  max_text_blocks: 50
+  max_text_block_length: 200
+  
+  # OCR text limits
+  max_ocr_text_length: 5000
+  
+  # Prompt limits
+  max_prompt_length: 4000
+  
+  # Pagination settings
+  text_blocks_batch_size: 50
+  ocr_text_chunk_size: 4000
+  ocr_text_chunk_overlap: 200
 

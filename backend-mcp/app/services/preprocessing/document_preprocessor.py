@@ -25,15 +25,21 @@ class DocumentPreprocessor:
             "DocumentPreprocessor initialized"
         )
     
+    def _get_document_attr(self, doc: Any, attr: str, default: Any = None) -> Any:
+        """Safely get attribute from document (dict or object)"""
+        if isinstance(doc, dict):
+            return doc.get(attr, default)
+        return getattr(doc, attr, default)
+    
     async def process_documents(
         self,
-        documents_list: List[DocumentResponseSchema]
+        documents_list: List[Any]
     ) -> List[ProcessedDocumentSchema]:
         """
         Process and normalize documents.
         
         Args:
-            documents_list: List of document schemas from Salesforce
+            documents_list: List of document schemas from Salesforce (can be dict or DocumentResponseSchema)
             
         Returns:
             List of processed documents with metadata
@@ -62,12 +68,13 @@ class DocumentPreprocessor:
                     if processed_doc:
                         processed_documents.append(processed_doc)
                 except Exception as e:
+                    doc_id = self._get_document_attr(doc, "document_id", "unknown")
                     safe_log(
                         logger,
                         logging.ERROR,
                         "Error processing document",
                         document_index=i,
-                        document_id=doc.document_id if doc else "unknown",
+                        document_id=doc_id,
                         error_type=type(e).__name__,
                         error_message=str(e) if e else "Unknown"
                     )
@@ -85,21 +92,23 @@ class DocumentPreprocessor:
             return processed_documents
             
         except Exception as e:
+            import traceback
             safe_log(
                 logger,
                 logging.ERROR,
                 "Unexpected error in process_documents",
                 error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown error"
+                error_message=str(e) if e else "Unknown error",
+                traceback=traceback.format_exc()
             )
             return []
     
     async def _process_single_document(
         self,
-        document: DocumentResponseSchema,
+        document: Any,
         index: int
     ) -> Optional[ProcessedDocumentSchema]:
-        """Process a single document"""
+        """Process a single document (can be dict or DocumentResponseSchema)"""
         try:
             # Extract metadata
             metadata = await self.extract_document_metadata(document)
@@ -107,13 +116,22 @@ class DocumentPreprocessor:
             # Validate document quality
             quality_score = await self.validate_document_quality(document, metadata)
             
+            # Get document attributes safely
+            doc_id = self._get_document_attr(document, "document_id") or f"doc_{index}"
+            doc_name = self._get_document_attr(document, "name") or f"document_{index}"
+            doc_url = self._get_document_attr(document, "url") or ""
+            doc_type = self._get_document_attr(document, "type") or "application/pdf"
+            doc_indexed = self._get_document_attr(document, "indexed")
+            if doc_indexed is None:
+                doc_indexed = True
+            
             # Build processed document
             processed_doc = ProcessedDocumentSchema(
-                document_id=document.document_id if document.document_id else f"doc_{index}",
-                name=document.name if document.name else f"document_{index}",
-                url=document.url if document.url else "",
-                type=document.type if document.type else "application/pdf",
-                indexed=document.indexed if document.indexed is not None else True,
+                document_id=doc_id,
+                name=doc_name,
+                url=doc_url,
+                type=doc_type,
+                indexed=doc_indexed,
                 metadata=metadata,
                 quality_score=quality_score,
                 processed=True
@@ -122,11 +140,12 @@ class DocumentPreprocessor:
             return processed_doc
             
         except Exception as e:
+            doc_id = self._get_document_attr(document, "document_id", "unknown")
             safe_log(
                 logger,
                 logging.ERROR,
                 "Error processing single document",
-                document_id=document.document_id if document else "unknown",
+                document_id=doc_id,
                 error_type=type(e).__name__,
                 error_message=str(e) if e else "Unknown"
             )
@@ -134,50 +153,55 @@ class DocumentPreprocessor:
     
     async def extract_document_metadata(
         self,
-        document: DocumentResponseSchema
+        document: Any
     ) -> DocumentMetadataSchema:
         """
-        Extract metadata from document.
+        Extract metadata from document (can be dict or DocumentResponseSchema).
         
         Args:
-            document: Document schema
+            document: Document schema or dict
             
         Returns:
             Document metadata schema
         """
         try:
+            # Get document attributes safely
+            doc_name = self._get_document_attr(document, "name", "unknown")
+            doc_type = self._get_document_attr(document, "type", "application/pdf")
+            
             # Basic metadata extraction
             metadata = DocumentMetadataSchema(
-                filename=document.name if document.name else "unknown",
+                filename=doc_name,
                 size=0,  # Will be determined if document is downloaded
-                mime_type=document.type if document.type else "application/pdf",
+                mime_type=doc_type,
                 pages_count=0,  # Will be determined for PDFs
                 dimensions=None,  # Will be determined for images
                 orientation=None  # Will be determined for images
             )
             
-            # TODO: Implement actual metadata extraction when documents are available
-            # - Download document if URL provided
-            # - Extract PDF pages using PyPDF2/pdfplumber
-            # - Extract image dimensions using PIL/Pillow
-            # - Detect orientation for images
+            # Note: Actual page count extraction happens during PDF processing in mcp_sender.py
+            # using PDFProcessor. This method provides basic metadata.
+            # For full metadata including page count, see PDFProcessor.extract_pdf_pages()
             
             return metadata
             
         except Exception as e:
+            doc_id = self._get_document_attr(document, "document_id", "unknown")
+            doc_name = self._get_document_attr(document, "name", "unknown")
+            doc_type = self._get_document_attr(document, "type", "application/pdf")
             safe_log(
                 logger,
                 logging.ERROR,
                 "Error extracting document metadata",
-                document_id=document.document_id if document else "unknown",
+                document_id=doc_id,
                 error_type=type(e).__name__,
                 error_message=str(e) if e else "Unknown"
             )
             # Return minimal metadata on error
             return DocumentMetadataSchema(
-                filename=document.name if document else "unknown",
+                filename=doc_name,
                 size=0,
-                mime_type=document.type if document else "application/pdf",
+                mime_type=doc_type,
                 pages_count=0,
                 dimensions=None,
                 orientation=None
@@ -185,14 +209,14 @@ class DocumentPreprocessor:
     
     async def validate_document_quality(
         self,
-        document: DocumentResponseSchema,
+        document: Any,
         metadata: DocumentMetadataSchema
     ) -> float:
         """
         Validate document quality and return score (0-100).
         
         Args:
-            document: Document schema
+            document: Document schema or dict
             metadata: Document metadata
             
         Returns:
@@ -202,21 +226,27 @@ class DocumentPreprocessor:
             score = 100.0
             
             # Check if document has required fields
-            if not document.document_id:
+            doc_id = self._get_document_attr(document, "document_id")
+            doc_name = self._get_document_attr(document, "name")
+            doc_url = self._get_document_attr(document, "url")
+            doc_type = self._get_document_attr(document, "type")
+            doc_indexed = self._get_document_attr(document, "indexed")
+            
+            if not doc_id:
                 score -= 20
-            if not document.name:
+            if not doc_name:
                 score -= 10
-            if not document.url:
+            if not doc_url:
                 score -= 15
             
             # Check document type
-            if document.type:
+            if doc_type:
                 valid_types = ["application/pdf", "image/jpeg", "image/png", "image/jpg"]
-                if document.type.lower() not in valid_types:
+                if doc_type.lower() not in valid_types:
                     score -= 30
             
             # Check if indexed
-            if not document.indexed:
+            if doc_indexed is False:
                 score -= 5
             
             # Ensure score is between 0 and 100
@@ -225,11 +255,12 @@ class DocumentPreprocessor:
             return score
             
         except Exception as e:
+            doc_id = self._get_document_attr(document, "document_id", "unknown")
             safe_log(
                 logger,
                 logging.ERROR,
                 "Error validating document quality",
-                document_id=document.document_id if document else "unknown",
+                document_id=doc_id,
                 error_type=type(e).__name__,
                 error_message=str(e) if e else "Unknown"
             )

@@ -26,6 +26,7 @@ from app.state import MCPAgentState
 from app.config.llm_builder import LLMBuilderFactory
 from app.config.config_loader import get_config_loader
 from app.nodes.ocr_mapping_tool import ocr_and_mapping_tool
+from app.core.config import limits_config
 
 load_dotenv(override=True)
 
@@ -88,8 +89,10 @@ def _strip_data_urls(s: str, placeholder: str = "[[binary omitted]]") -> str:
     """Remove inline base64 data URLs to avoid sending large binary payloads."""
     return _DATA_URL_RE.sub(placeholder, s)
 
-def _truncate(s: str, max_chars: int = 4000) -> str:
+def _truncate(s: str, max_chars: Optional[int] = None) -> str:
     """Truncate long strings to a safe maximum length for logging/LLM input."""
+    if max_chars is None:
+        max_chars = limits_config.max_prompt_length
     return s if len(s) <= max_chars else (s[:max_chars] + " …[truncated]")
 
 def _clone_msg_with_content(msg: BaseMessage, content: str) -> BaseMessage:
