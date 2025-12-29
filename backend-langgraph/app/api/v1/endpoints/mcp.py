@@ -355,24 +355,135 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             fields_count=len(fields_dictionary)
         )
         
-        # Convert documents data to Document objects
+        # Validate and convert documents data to Document objects
         documents = []
-        for doc_data in documents_data:
-            pages = []
-            for page_data in doc_data.get("pages", []):
-                pages.append(PageOCR(
-                    page_number=page_data.get("page_number", 1),
-                    image_b64=page_data.get("image_b64", ""),
-                    image_mime=page_data.get("image_mime", "image/jpeg"),
-                    processed=False
+        documents_validation_errors = []
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Validating documents before conversion",
+            request_id=request_id,
+            record_id=record_id,
+            documents_data_count=len(documents_data),
+            documents_data_type=type(documents_data).__name__
+        )
+        
+        for idx, doc_data in enumerate(documents_data):
+            try:
+                # Validate document structure
+                if not isinstance(doc_data, dict):
+                    documents_validation_errors.append(f"Document {idx}: not a dict, got {type(doc_data).__name__}")
+                    continue
+                
+                doc_id = doc_data.get("id") or str(uuid.uuid4())
+                doc_type = doc_data.get("type", "")
+                pages_data = doc_data.get("pages", [])
+                
+                safe_log(
+                    logger,
+                    logging.DEBUG,
+                    f"Processing document {idx}",
+                    request_id=request_id,
+                    doc_id=doc_id,
+                    doc_type=doc_type,
+                    pages_count=len(pages_data) if isinstance(pages_data, list) else 0
+                )
+                
+                # Validate and convert pages
+                pages = []
+                if not isinstance(pages_data, list):
+                    documents_validation_errors.append(f"Document {idx} ({doc_id}): pages is not a list, got {type(pages_data).__name__}")
+                    continue
+                
+                for page_idx, page_data in enumerate(pages_data):
+                    try:
+                        if not isinstance(page_data, dict):
+                            documents_validation_errors.append(f"Document {idx} ({doc_id}), page {page_idx}: not a dict")
+                            continue
+                        
+                        image_b64 = page_data.get("image_b64", "")
+                        if not image_b64 or not isinstance(image_b64, str):
+                            documents_validation_errors.append(f"Document {idx} ({doc_id}), page {page_idx}: missing or invalid image_b64")
+                            continue
+                        
+                        # Validate base64 format (basic check)
+                        if len(image_b64) < 100:  # Base64 images should be longer
+                            documents_validation_errors.append(f"Document {idx} ({doc_id}), page {page_idx}: image_b64 too short (likely invalid)")
+                            continue
+                        
+                        pages.append(PageOCR(
+                            page_number=page_data.get("page_number", page_idx + 1),
+                            image_b64=image_b64,
+                            image_mime=page_data.get("image_mime", "image/jpeg"),
+                            processed=False
+                        ))
+                    except Exception as e:
+                        documents_validation_errors.append(f"Document {idx} ({doc_id}), page {page_idx}: error {type(e).__name__}: {str(e)}")
+                        continue
+                
+                if not pages:
+                    documents_validation_errors.append(f"Document {idx} ({doc_id}): no valid pages found")
+                    continue
+                
+                documents.append(Document(
+                    id=doc_id,
+                    type=doc_type,
+                    pages=pages,
+                    metadata=doc_data.get("metadata", {})
                 ))
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    f"Document {idx} converted successfully",
+                    request_id=request_id,
+                    doc_id=doc_id,
+                    pages_count=len(pages)
+                )
+                
+            except Exception as e:
+                documents_validation_errors.append(f"Document {idx}: unexpected error {type(e).__name__}: {str(e)}")
+                continue
+        
+        # Log validation results
+        safe_log(
+            logger,
+            logging.INFO,
+            "Documents validation completed",
+            request_id=request_id,
+            record_id=record_id,
+            documents_count=len(documents),
+            validation_errors_count=len(documents_validation_errors),
+            validation_errors=documents_validation_errors[:5] if documents_validation_errors else []
+        )
+        
+        # If no valid documents, return error
+        if not documents:
+            error_msg = "No valid documents found in request"
+            if documents_validation_errors:
+                error_msg += f". Errors: {'; '.join(documents_validation_errors[:3])}"
             
-            documents.append(Document(
-                id=doc_data.get("id", str(uuid.uuid4())),
-                type=doc_data.get("type", ""),
-                pages=pages,
-                metadata=doc_data.get("metadata", {})
-            ))
+            safe_log(
+                logger,
+                logging.ERROR,
+                "No valid documents after validation",
+                request_id=request_id,
+                record_id=record_id,
+                validation_errors=documents_validation_errors
+            )
+            
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_DOCUMENTS",
+                        "message": error_msg,
+                        "details": documents_validation_errors[:10]  # Limit to first 10 errors
+                    }
+                }
+            )
         
         # Initialize state
         initial_state = MCPAgentState(
@@ -489,6 +600,9 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         )
         
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        
         safe_log(
             logger,
             logging.ERROR,
@@ -497,8 +611,10 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             record_id=record_id or "unknown",
             session_id=session_id or "none",
             error_type=type(e).__name__,
-            error_message=str(e) if e else "Unknown error"
+            error_message=str(e) if e else "Unknown error",
+            traceback=error_traceback
         )
+        
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -506,7 +622,8 @@ async def process_mcp_request(request: Request) -> JSONResponse:
                 "error": {
                     "code": "INTERNAL_SERVER_ERROR",
                     "message": "An internal server error occurred",
-                    "details": str(e) if e else None
+                    "details": str(e) if e else None,
+                    "error_type": type(e).__name__
                 }
             }
         )

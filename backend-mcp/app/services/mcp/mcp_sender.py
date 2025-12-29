@@ -430,12 +430,71 @@ class MCPSender:
                 "defaultValue": field_dict.get("defaultValue") or field_dict.get("default_value")
             }
         
-        # Build request body
+        # Validate documents before sending
+        documents_validation_errors = []
+        valid_documents = []
+        
+        for idx, doc in enumerate(documents):
+            try:
+                if not isinstance(doc, dict):
+                    documents_validation_errors.append(f"Document {idx}: not a dict")
+                    continue
+                
+                doc_id = doc.get("id", "unknown")
+                pages = doc.get("pages", [])
+                
+                if not isinstance(pages, list):
+                    documents_validation_errors.append(f"Document {idx} ({doc_id}): pages is not a list")
+                    continue
+                
+                if not pages:
+                    documents_validation_errors.append(f"Document {idx} ({doc_id}): no pages")
+                    continue
+                
+                # Validate pages have image_b64
+                valid_pages = []
+                for page_idx, page in enumerate(pages):
+                    if not isinstance(page, dict):
+                        documents_validation_errors.append(f"Document {idx} ({doc_id}), page {page_idx}: not a dict")
+                        continue
+                    
+                    image_b64 = page.get("image_b64", "")
+                    if not image_b64 or not isinstance(image_b64, str) or len(image_b64) < 100:
+                        documents_validation_errors.append(f"Document {idx} ({doc_id}), page {page_idx}: invalid or missing image_b64")
+                        continue
+                    
+                    valid_pages.append(page)
+                
+                if not valid_pages:
+                    documents_validation_errors.append(f"Document {idx} ({doc_id}): no valid pages")
+                    continue
+                
+                # Update document with only valid pages
+                doc["pages"] = valid_pages
+                valid_documents.append(doc)
+                
+            except Exception as e:
+                documents_validation_errors.append(f"Document {idx}: error {type(e).__name__}: {str(e)}")
+                continue
+        
+        # Log validation results
+        safe_log(
+            logger,
+            logging.INFO,
+            "Documents validation before sending to LangGraph",
+            record_id=record_id,
+            total_documents=len(documents),
+            valid_documents=len(valid_documents),
+            validation_errors_count=len(documents_validation_errors),
+            validation_errors=documents_validation_errors[:5] if documents_validation_errors else []
+        )
+        
+        # Build request body with validated documents
         request_body = {
             "record_id": record_id,
             "session_id": session_id,
             "user_request": user_request,
-            "documents": documents,
+            "documents": valid_documents,
             "fields_dictionary": fields_dictionary
         }
         
@@ -444,11 +503,24 @@ class MCPSender:
             logging.INFO,
             "Converted MCP message to LangGraph format",
             record_id=record_id,
-            documents_count=len(documents),
+            documents_count=len(valid_documents),
+            total_pages=sum(len(doc.get("pages", [])) for doc in valid_documents),
             context_fields_count=len(context_fields),
             fields_dictionary_count=len(fields_dictionary),
-            fields_dictionary_keys=list(fields_dictionary.keys())[:10] if fields_dictionary else []
+            fields_dictionary_keys=list(fields_dictionary.keys())[:10] if fields_dictionary else [],
+            has_validation_errors=len(documents_validation_errors) > 0
         )
+        
+        # Warn if documents were filtered
+        if documents_validation_errors:
+            safe_log(
+                logger,
+                logging.WARNING,
+                "Some documents were filtered due to validation errors",
+                record_id=record_id,
+                filtered_count=len(documents) - len(valid_documents),
+                errors=documents_validation_errors[:10]
+            )
         
         return request_body
     

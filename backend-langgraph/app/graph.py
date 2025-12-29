@@ -10,8 +10,13 @@ from langgraph.graph import StateGraph, START, END
 from app.state import MCPAgentState
 from app.orchestrator.supervisor import supervisor_wrapper
 from app.utils.handoff_tool import route_after_supervisor
+from app.utils.observability import setup_phoenix_observability
+from app.utils.trace_node import trace_node
 
 load_dotenv(override=True)
+
+# Setup Phoenix observability at module level (like in reference project)
+setup_phoenix_observability(project_name="sfd-clm-langgraph")
 
 
 def create_async_graph():
@@ -25,7 +30,7 @@ def create_async_graph():
     """
     workflow = (
         StateGraph(MCPAgentState)
-        .add_node("supervisor", supervisor_wrapper)
+        .add_node("supervisor", trace_node("supervisor")(supervisor_wrapper))
         .add_edge(START, "supervisor")
         .add_conditional_edges(
             "supervisor",
