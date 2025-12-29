@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     
+    # File server configuration
+    file_server_url: str = "http://localhost:8003"
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
