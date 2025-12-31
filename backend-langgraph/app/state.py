@@ -90,7 +90,7 @@ class MCPAgentState(BaseModel):
 
     # Mapping et extraction
     fields_dictionary: Dict[str, Any] = Field(default_factory=dict)
-    field_mappings: Dict[str, str] = Field(default_factory=dict)  # {field_name: extracted_text_location}
+    field_mappings: Dict[str, Any] = Field(default_factory=dict)  # {field_name: mapping_dict} where mapping_dict can be str or Dict with 'value', 'confidence', 'source', 'justification'
     extracted_data: Dict[str, Any] = Field(default_factory=dict)
     confidence_scores: Dict[str, float] = Field(default_factory=dict)
 
