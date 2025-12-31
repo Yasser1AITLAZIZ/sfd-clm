@@ -563,45 +563,110 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             extracted_data_keys=list(final_state.extracted_data.keys())[:10] if final_state.extracted_data else []
         )
         
-        # Build response
-        response_data = {
-            "extracted_data": final_state.extracted_data,
-            "confidence_scores": final_state.confidence_scores,
-            "quality_score": final_state.quality_score,
-            "field_mappings": final_state.field_mappings,
-            "processing_time": execution_time,
-            "ocr_text_length": len(final_state.ocr_text or ""),
-            "text_blocks_count": len(final_state.text_blocks),
-            "metrics": metrics_summary
-        }
-        
-        # Log response data details before returning
-        safe_log(
-            logger,
-            logging.INFO,
-            "LangGraph response data prepared",
-            request_id=request_id,
-            record_id=record_id,
-            response_status="success",
-            extracted_data_count=len(response_data.get("extracted_data", {})),
-            extracted_data_keys=list(response_data.get("extracted_data", {}).keys())[:10],
-            confidence_scores_count=len(response_data.get("confidence_scores", {})),
-            quality_score=response_data.get("quality_score"),
-            has_extracted_data=bool(response_data.get("extracted_data")),
-            extracted_data_is_empty=not response_data.get("extracted_data") or len(response_data.get("extracted_data", {})) == 0
-        )
-        
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "success",
-                "data": response_data
+        # Build response with proper serialization
+        try:
+            # Ensure all data is JSON-serializable
+            def serialize_value(value):
+                """Recursively serialize values for JSON"""
+                if value is None:
+                    return None
+                elif isinstance(value, (str, int, float, bool)):
+                    return value
+                elif isinstance(value, dict):
+                    return {k: serialize_value(v) for k, v in value.items()}
+                elif isinstance(value, list):
+                    return [serialize_value(item) for item in value]
+                elif hasattr(value, 'model_dump'):
+                    return value.model_dump()
+                elif hasattr(value, 'dict'):
+                    return value.dict()
+                else:
+                    return str(value)
+            
+            # Serialize field_mappings to ensure it's JSON-compatible
+            serialized_field_mappings = serialize_value(final_state.field_mappings) if final_state.field_mappings else {}
+            
+            response_data = {
+                "extracted_data": serialize_value(final_state.extracted_data) if final_state.extracted_data else {},
+                "confidence_scores": serialize_value(final_state.confidence_scores) if final_state.confidence_scores else {},
+                "quality_score": final_state.quality_score,
+                "field_mappings": serialized_field_mappings,
+                "processing_time": execution_time,
+                "ocr_text_length": len(final_state.ocr_text or ""),
+                "text_blocks_count": len(final_state.text_blocks),
+                "metrics": serialize_value(metrics_summary) if metrics_summary else {}
             }
-        )
+            
+            # Test JSON serialization before returning
+            try:
+                import json
+                json.dumps(response_data, default=str, ensure_ascii=False)
+            except (TypeError, ValueError) as json_error:
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "JSON serialization test failed before returning response",
+                    request_id=request_id,
+                    record_id=record_id,
+                    error_type=type(json_error).__name__,
+                    error_message=str(json_error),
+                    extracted_data_type=type(final_state.extracted_data).__name__,
+                    field_mappings_type=type(final_state.field_mappings).__name__
+                )
+                raise ValueError(f"Response data is not JSON-serializable: {json_error}") from json_error
+            
+            # Log response data details before returning
+            safe_log(
+                logger,
+                logging.INFO,
+                "LangGraph response data prepared",
+                request_id=request_id,
+                record_id=record_id,
+                response_status="success",
+                extracted_data_count=len(response_data.get("extracted_data", {})),
+                extracted_data_keys=list(response_data.get("extracted_data", {}).keys())[:10],
+                confidence_scores_count=len(response_data.get("confidence_scores", {})),
+                quality_score=response_data.get("quality_score"),
+                has_extracted_data=bool(response_data.get("extracted_data")),
+                extracted_data_is_empty=not response_data.get("extracted_data") or len(response_data.get("extracted_data", {})) == 0
+            )
+            
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "status": "success",
+                    "data": response_data
+                }
+            )
+            
+        except Exception as build_error:
+            # Catch errors during response building
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Error building response data",
+                request_id=request_id,
+                record_id=record_id,
+                error_type=type(build_error).__name__,
+                error_message=str(build_error),
+                extracted_data_type=type(final_state.extracted_data).__name__ if hasattr(final_state, 'extracted_data') else "unknown",
+                field_mappings_type=type(final_state.field_mappings).__name__ if hasattr(final_state, 'field_mappings') else "unknown"
+            )
+            import traceback
+            logger.error(f"Response building traceback:\n{traceback.format_exc()}")
+            raise  # Re-raise to be caught by outer exception handler
         
     except Exception as e:
         import traceback
         error_traceback = traceback.format_exc()
+        
+        # Log to console with full traceback for debugging
+        logger.error(
+            f"Error processing MCP request: {type(e).__name__}: {str(e)}\n"
+            f"Request ID: {request_id}\n"
+            f"Record ID: {record_id or 'unknown'}\n"
+            f"Full traceback:\n{error_traceback}"
+        )
         
         safe_log(
             logger,
