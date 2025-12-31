@@ -520,14 +520,45 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         
         # Execute graph
         config = {"configurable": {"thread_id": f"{record_id}_{session_id or 'new'}"}}
-        final_state = await graph.ainvoke(initial_state, config)
+        final_state_raw = await graph.ainvoke(initial_state, config)
+        
+        # Convert to MCPAgentState if it's a dict (LangGraph sometimes returns dict)
+        if isinstance(final_state_raw, dict):
+            final_state = MCPAgentState(**final_state_raw)
+        elif isinstance(final_state_raw, MCPAgentState):
+            final_state = final_state_raw
+        else:
+            # Fallback: try to convert
+            try:
+                final_state = MCPAgentState(**final_state_raw) if hasattr(final_state_raw, '__dict__') else MCPAgentState.model_validate(final_state_raw)
+            except Exception as e:
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "Failed to convert final_state to MCPAgentState",
+                    request_id=request_id,
+                    record_id=record_id,
+                    final_state_type=type(final_state_raw).__name__,
+                    error_type=type(e).__name__,
+                    error_message=str(e)
+                )
+                raise ValueError(f"Cannot convert final_state to MCPAgentState: {type(final_state_raw)}") from e
         
         metrics.end_step("total_processing")
         execution_time = (datetime.utcnow() - start_time).total_seconds()
         
+        # Extract data from final_state with safe access
+        # Use getattr for Pydantic models, .get() for dicts
+        extracted_data = getattr(final_state, 'extracted_data', None) or (final_state.get('extracted_data', {}) if isinstance(final_state, dict) else {})
+        confidence_scores = getattr(final_state, 'confidence_scores', None) or (final_state.get('confidence_scores', {}) if isinstance(final_state, dict) else {})
+        quality_score = getattr(final_state, 'quality_score', None) or (final_state.get('quality_score') if isinstance(final_state, dict) else None)
+        field_mappings = getattr(final_state, 'field_mappings', None) or (final_state.get('field_mappings', {}) if isinstance(final_state, dict) else {})
+        ocr_text = getattr(final_state, 'ocr_text', None) or (final_state.get('ocr_text') if isinstance(final_state, dict) else None)
+        text_blocks = getattr(final_state, 'text_blocks', None) or (final_state.get('text_blocks', []) if isinstance(final_state, dict) else [])
+        
         # Record field success rates
-        for field_name, value in final_state.extracted_data.items():
-            confidence = final_state.confidence_scores.get(field_name, 0.0)
+        for field_name, value in (extracted_data.items() if extracted_data else []):
+            confidence = confidence_scores.get(field_name, 0.0) if confidence_scores else 0.0
             metrics.record_field_success(field_name, value is not None, confidence)
         
         # Record final memory usage
@@ -546,8 +577,8 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         store_metrics(request_id, full_metrics)
         
         # Log final state details before building response
-        extracted_data_is_empty = not final_state.extracted_data or len(final_state.extracted_data) == 0
-        extracted_data_is_none = final_state.extracted_data is None
+        extracted_data_is_empty = not extracted_data or len(extracted_data) == 0
+        extracted_data_is_none = extracted_data is None
         
         safe_log(
             logger,
@@ -556,11 +587,11 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             request_id=request_id,
             record_id=record_id,
             execution_time=execution_time,
-            fields_extracted=len(final_state.extracted_data) if final_state.extracted_data else 0,
-            quality_score=final_state.quality_score,
+            fields_extracted=len(extracted_data) if extracted_data else 0,
+            quality_score=quality_score,
             extracted_data_is_none=extracted_data_is_none,
             extracted_data_is_empty=extracted_data_is_empty,
-            extracted_data_keys=list(final_state.extracted_data.keys())[:10] if final_state.extracted_data else []
+            extracted_data_keys=list(extracted_data.keys())[:10] if extracted_data else []
         )
         
         # Build response with proper serialization
@@ -584,16 +615,16 @@ async def process_mcp_request(request: Request) -> JSONResponse:
                     return str(value)
             
             # Serialize field_mappings to ensure it's JSON-compatible
-            serialized_field_mappings = serialize_value(final_state.field_mappings) if final_state.field_mappings else {}
+            serialized_field_mappings = serialize_value(field_mappings) if field_mappings else {}
             
             response_data = {
-                "extracted_data": serialize_value(final_state.extracted_data) if final_state.extracted_data else {},
-                "confidence_scores": serialize_value(final_state.confidence_scores) if final_state.confidence_scores else {},
-                "quality_score": final_state.quality_score,
+                "extracted_data": serialize_value(extracted_data) if extracted_data else {},
+                "confidence_scores": serialize_value(confidence_scores) if confidence_scores else {},
+                "quality_score": quality_score,
                 "field_mappings": serialized_field_mappings,
                 "processing_time": execution_time,
-                "ocr_text_length": len(final_state.ocr_text or ""),
-                "text_blocks_count": len(final_state.text_blocks),
+                "ocr_text_length": len(ocr_text or "") if ocr_text else 0,
+                "text_blocks_count": len(text_blocks) if text_blocks else 0,
                 "metrics": serialize_value(metrics_summary) if metrics_summary else {}
             }
             
