@@ -40,6 +40,30 @@ The scripts automatically use these ports, but if you get 404 errors, check:
 
 ## Scripts
 
+### Diagnostic Scripts
+
+#### `diagnose_mcp_extraction.py`
+**Purpose**: Deep diagnostic to identify why MCP doesn't receive extracted data from LangGraph
+
+**Usage**:
+```bash
+python debug-scripts/diagnose_mcp_extraction.py
+```
+
+**What it does**:
+1. Sends request to LangGraph service
+2. Captures and saves the full LangGraph response (`langgraph_response_*.json`)
+3. Simulates MCP extraction logic (same as `mcp_sender.py`)
+4. Saves what MCP extracts (`mcp_extracted_response_*.json`)
+5. Creates comparison report (`comparison_report_*.json`)
+
+**Output files**:
+- `langgraph_response_YYYYMMDD_HHMMSS.json` - Full LangGraph response
+- `mcp_extracted_response_YYYYMMDD_HHMMSS.json` - What MCP extracts
+- `comparison_report_YYYYMMDD_HHMMSS.json` - Comparison analysis
+
+**Use this when**: You see that LangGraph returns data (e.g., "8 fields extracted") but MCP receives empty `extracted_data`.
+
 ### Step 1: Mock Salesforce Retrieval
 ```bash
 python debug-scripts/step1_test_mock_salesforce_retrieval.py
