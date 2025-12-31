@@ -522,6 +522,51 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         config = {"configurable": {"thread_id": f"{record_id}_{session_id or 'new'}"}}
         final_state_raw = await graph.ainvoke(initial_state, config)
         
+        # Debug: Log raw final_state structure
+        safe_log(
+            logger,
+            logging.INFO,
+            "Raw final_state received from graph",
+            request_id=request_id,
+            record_id=record_id,
+            final_state_type=type(final_state_raw).__name__,
+            is_dict=isinstance(final_state_raw, dict),
+            is_mcp_state=isinstance(final_state_raw, MCPAgentState)
+        )
+        
+        # If it's a dict, log its contents BEFORE conversion
+        if isinstance(final_state_raw, dict):
+            safe_log(
+                logger,
+                logging.INFO,
+                "Final state dict contents (BEFORE conversion)",
+                request_id=request_id,
+                record_id=record_id,
+                dict_keys=list(final_state_raw.keys())[:20],
+                has_extracted_data="extracted_data" in final_state_raw,
+                extracted_data_keys=list(final_state_raw.get("extracted_data", {}).keys())[:10] if final_state_raw.get("extracted_data") else [],
+                extracted_data_count=len(final_state_raw.get("extracted_data", {})) if final_state_raw.get("extracted_data") else 0,
+                has_confidence_scores="confidence_scores" in final_state_raw,
+                confidence_scores_count=len(final_state_raw.get("confidence_scores", {})) if final_state_raw.get("confidence_scores") else 0,
+                has_field_mappings="field_mappings" in final_state_raw,
+                field_mappings_count=len(final_state_raw.get("field_mappings", {})) if final_state_raw.get("field_mappings") else 0,
+                has_quality_score="quality_score" in final_state_raw,
+                quality_score_value=final_state_raw.get("quality_score")
+            )
+        elif isinstance(final_state_raw, MCPAgentState):
+            safe_log(
+                logger,
+                logging.INFO,
+                "Final state MCPAgentState (BEFORE extraction)",
+                request_id=request_id,
+                record_id=record_id,
+                extracted_data_count=len(final_state_raw.extracted_data) if final_state_raw.extracted_data else 0,
+                extracted_data_keys=list(final_state_raw.extracted_data.keys())[:10] if final_state_raw.extracted_data else [],
+                confidence_scores_count=len(final_state_raw.confidence_scores) if final_state_raw.confidence_scores else 0,
+                field_mappings_count=len(final_state_raw.field_mappings) if final_state_raw.field_mappings else 0,
+                quality_score=final_state_raw.quality_score
+            )
+        
         # Convert to MCPAgentState if it's a dict (LangGraph sometimes returns dict)
         if isinstance(final_state_raw, dict):
             final_state = MCPAgentState(**final_state_raw)
@@ -544,6 +589,20 @@ async def process_mcp_request(request: Request) -> JSONResponse:
                 )
                 raise ValueError(f"Cannot convert final_state to MCPAgentState: {type(final_state_raw)}") from e
         
+        # Debug: Log final_state AFTER conversion
+        safe_log(
+            logger,
+            logging.INFO,
+            "Final state AFTER conversion",
+            request_id=request_id,
+            record_id=record_id,
+            extracted_data_count=len(getattr(final_state, 'extracted_data', {})) if getattr(final_state, 'extracted_data', None) else 0,
+            extracted_data_keys=list(getattr(final_state, 'extracted_data', {}).keys())[:10] if getattr(final_state, 'extracted_data', None) else [],
+            confidence_scores_count=len(getattr(final_state, 'confidence_scores', {})) if getattr(final_state, 'confidence_scores', None) else 0,
+            field_mappings_count=len(getattr(final_state, 'field_mappings', {})) if getattr(final_state, 'field_mappings', None) else 0,
+            quality_score=getattr(final_state, 'quality_score', None)
+        )
+        
         metrics.end_step("total_processing")
         execution_time = (datetime.utcnow() - start_time).total_seconds()
         
@@ -555,6 +614,42 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         field_mappings = getattr(final_state, 'field_mappings', None) or (final_state.get('field_mappings', {}) if isinstance(final_state, dict) else {})
         ocr_text = getattr(final_state, 'ocr_text', None) or (final_state.get('ocr_text') if isinstance(final_state, dict) else None)
         text_blocks = getattr(final_state, 'text_blocks', None) or (final_state.get('text_blocks', []) if isinstance(final_state, dict) else [])
+        
+        # Fallback: If extracted_data is empty but field_mappings has data, extract values from field_mappings
+        if (not extracted_data or len(extracted_data) == 0) and field_mappings and len(field_mappings) > 0:
+            safe_log(
+                logger,
+                logging.WARNING,
+                "extracted_data is empty but field_mappings has data, extracting values from field_mappings",
+                request_id=request_id,
+                record_id=record_id,
+                field_mappings_count=len(field_mappings),
+                field_mappings_keys=list(field_mappings.keys())[:10]
+            )
+            extracted_data = {}
+            for field_name, mapping_data in field_mappings.items():
+                if isinstance(mapping_data, dict):
+                    # Extract value from mapping dict (can be 'value' key or the dict itself)
+                    value = mapping_data.get("value") if "value" in mapping_data else mapping_data
+                    extracted_data[field_name] = value
+                    # Ensure confidence score exists
+                    if field_name not in confidence_scores:
+                        confidence_scores[field_name] = mapping_data.get("confidence", 0.0)
+                elif isinstance(mapping_data, str):
+                    # If mapping_data is a string, use it directly
+                    extracted_data[field_name] = mapping_data
+                    if field_name not in confidence_scores:
+                        confidence_scores[field_name] = 0.0
+            
+            safe_log(
+                logger,
+                logging.INFO,
+                "Extracted data from field_mappings",
+                request_id=request_id,
+                record_id=record_id,
+                extracted_data_count=len(extracted_data),
+                extracted_data_keys=list(extracted_data.keys())[:10]
+            )
         
         # Record field success rates
         for field_name, value in (extracted_data.items() if extracted_data else []):

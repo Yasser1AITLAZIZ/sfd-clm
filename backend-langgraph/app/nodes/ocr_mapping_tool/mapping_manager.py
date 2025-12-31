@@ -295,6 +295,24 @@ class MappingManager:
             if field_name not in all_confidence_scores:
                 all_confidence_scores[field_name] = all_field_mappings.get(field_name, {}).get("confidence", 0.0)
         
+        # If extracted_data is empty but field_mappings has data, extract values from field_mappings
+        if not all_extracted_data and all_field_mappings:
+            print("⚠️ [Mapping] extracted_data is empty, extracting from field_mappings...")
+            for field_name, mapping_data in all_field_mappings.items():
+                if isinstance(mapping_data, dict):
+                    # Extract value from mapping dict (can be 'value' key or the dict itself)
+                    value = mapping_data.get("value") if "value" in mapping_data else mapping_data
+                    all_extracted_data[field_name] = value
+                    # Ensure confidence score exists
+                    if field_name not in all_confidence_scores:
+                        all_confidence_scores[field_name] = mapping_data.get("confidence", 0.0)
+                elif isinstance(mapping_data, str):
+                    # If mapping_data is a string, use it directly
+                    all_extracted_data[field_name] = mapping_data
+                    if field_name not in all_confidence_scores:
+                        all_confidence_scores[field_name] = 0.0
+            print(f"✅ [Mapping] Extracted {len(all_extracted_data)} fields from field_mappings")
+        
         print(f"✅ [Mapping] Mapped {len(all_extracted_data)} fields")
         if all_confidence_scores:
             avg_confidence = sum(all_confidence_scores.values()) / len(all_confidence_scores)
