@@ -549,18 +549,35 @@ class MCPSender:
                 "LangGraph raw HTTP response received",
                 status_code=response.status_code,
                 response_text_length=len(response_text),
-                response_text_preview=response_text[:500] if response_text else "No response text"
+                response_text_preview=response_text[:1000] if response_text else "No response text"
+            )
+            
+            # Log full response structure (first level)
+            safe_log(
+                logger,
+                logging.DEBUG,
+                "LangGraph response JSON structure",
+                response_keys=list(response_data.keys()) if isinstance(response_data, dict) else [],
+                response_status=response_data.get("status") if isinstance(response_data, dict) else None,
+                has_data_key="data" in response_data if isinstance(response_data, dict) else False
             )
             
             # Log full response structure for debugging
+            data_section = response_data.get("data", {}) if "data" in response_data else {}
+            extracted_data_in_response = data_section.get("extracted_data", {}) if "extracted_data" in data_section else {}
+            
             safe_log(
                 logger,
                 logging.INFO,
                 "LangGraph response received",
                 response_status=response_data.get("status"),
                 has_data=("data" in response_data),
-                data_keys=list(response_data.get("data", {}).keys()) if "data" in response_data else [],
-                extracted_data_keys=list(response_data.get("data", {}).get("extracted_data", {}).keys()) if "data" in response_data and "extracted_data" in response_data.get("data", {}) else [],
+                data_keys=list(data_section.keys()) if data_section else [],
+                has_extracted_data_in_data=("extracted_data" in data_section),
+                extracted_data_type=type(extracted_data_in_response).__name__,
+                extracted_data_keys=list(extracted_data_in_response.keys())[:10] if extracted_data_in_response else [],
+                extracted_data_count=len(extracted_data_in_response) if extracted_data_in_response else 0,
+                extracted_data_sample=str(dict(list(extracted_data_in_response.items())[:3])) if extracted_data_in_response and isinstance(extracted_data_in_response, dict) else str(extracted_data_in_response)[:200],
                 response_data_keys=list(response_data.keys())
             )
             

@@ -536,6 +536,10 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         
         # If it's a dict, log its contents BEFORE conversion
         if isinstance(final_state_raw, dict):
+            extracted_data_raw = final_state_raw.get("extracted_data", {})
+            field_mappings_raw = final_state_raw.get("field_mappings", {})
+            confidence_scores_raw = final_state_raw.get("confidence_scores", {})
+            
             safe_log(
                 logger,
                 logging.INFO,
@@ -544,12 +548,15 @@ async def process_mcp_request(request: Request) -> JSONResponse:
                 record_id=record_id,
                 dict_keys=list(final_state_raw.keys())[:20],
                 has_extracted_data="extracted_data" in final_state_raw,
-                extracted_data_keys=list(final_state_raw.get("extracted_data", {}).keys())[:10] if final_state_raw.get("extracted_data") else [],
-                extracted_data_count=len(final_state_raw.get("extracted_data", {})) if final_state_raw.get("extracted_data") else 0,
+                extracted_data_type=type(extracted_data_raw).__name__,
+                extracted_data_keys=list(extracted_data_raw.keys())[:10] if extracted_data_raw else [],
+                extracted_data_count=len(extracted_data_raw) if extracted_data_raw else 0,
+                extracted_data_sample=str(dict(list(extracted_data_raw.items())[:3])) if extracted_data_raw and isinstance(extracted_data_raw, dict) else str(extracted_data_raw)[:200],
                 has_confidence_scores="confidence_scores" in final_state_raw,
-                confidence_scores_count=len(final_state_raw.get("confidence_scores", {})) if final_state_raw.get("confidence_scores") else 0,
+                confidence_scores_count=len(confidence_scores_raw) if confidence_scores_raw else 0,
                 has_field_mappings="field_mappings" in final_state_raw,
-                field_mappings_count=len(final_state_raw.get("field_mappings", {})) if final_state_raw.get("field_mappings") else 0,
+                field_mappings_count=len(field_mappings_raw) if field_mappings_raw else 0,
+                field_mappings_sample=str(dict(list(field_mappings_raw.items())[:2])) if field_mappings_raw and isinstance(field_mappings_raw, dict) else str(field_mappings_raw)[:200],
                 has_quality_score="quality_score" in final_state_raw,
                 quality_score_value=final_state_raw.get("quality_score")
             )
@@ -712,6 +719,21 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             # Serialize field_mappings to ensure it's JSON-compatible
             serialized_field_mappings = serialize_value(field_mappings) if field_mappings else {}
             
+            # Log extracted_data before serialization
+            safe_log(
+                logger,
+                logging.INFO,
+                "Building response data",
+                request_id=request_id,
+                record_id=record_id,
+                extracted_data_type=type(extracted_data).__name__,
+                extracted_data_count=len(extracted_data) if extracted_data else 0,
+                extracted_data_keys=list(extracted_data.keys())[:10] if extracted_data else [],
+                extracted_data_sample=str(dict(list(extracted_data.items())[:3])) if extracted_data and isinstance(extracted_data, dict) else str(extracted_data)[:200],
+                confidence_scores_count=len(confidence_scores) if confidence_scores else 0,
+                field_mappings_count=len(field_mappings) if field_mappings else 0
+            )
+            
             response_data = {
                 "extracted_data": serialize_value(extracted_data) if extracted_data else {},
                 "confidence_scores": serialize_value(confidence_scores) if confidence_scores else {},
@@ -722,6 +744,19 @@ async def process_mcp_request(request: Request) -> JSONResponse:
                 "text_blocks_count": len(text_blocks) if text_blocks else 0,
                 "metrics": serialize_value(metrics_summary) if metrics_summary else {}
             }
+            
+            # Log response_data after serialization
+            safe_log(
+                logger,
+                logging.INFO,
+                "Response data after serialization",
+                request_id=request_id,
+                record_id=record_id,
+                response_data_keys=list(response_data.keys()),
+                extracted_data_count=len(response_data.get("extracted_data", {})),
+                extracted_data_keys_in_response=list(response_data.get("extracted_data", {}).keys())[:10],
+                confidence_scores_count=len(response_data.get("confidence_scores", {}))
+            )
             
             # Test JSON serialization before returning
             try:
