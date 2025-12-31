@@ -1415,14 +1415,55 @@ class WorkflowOrchestrator:
     
     def _build_workflow_response(self, workflow_state: Dict[str, Any]) -> Dict[str, Any]:
         """Build workflow response from state"""
-        return {
+        response_data = workflow_state.get("data", {})
+        
+        # Extract extracted_data from response_handling or mcp_sending for easy access
+        extracted_data = {}
+        confidence_scores = {}
+        quality_score = None
+        
+        # Try to get from response_handling first (most recent)
+        response_handling = response_data.get("response_handling", {})
+        if response_handling:
+            extracted_data = response_handling.get("extracted_data", {}) or {}
+            confidence_scores = response_handling.get("confidence_scores", {}) or {}
+        
+        # Fallback to mcp_sending if response_handling doesn't have it
+        if not extracted_data:
+            mcp_sending = response_data.get("mcp_sending", {})
+            mcp_response = mcp_sending.get("mcp_response", {}) if mcp_sending else {}
+            if mcp_response:
+                extracted_data = mcp_response.get("extracted_data", {}) or {}
+                confidence_scores = mcp_response.get("confidence_scores", {}) or {}
+                quality_score = mcp_response.get("quality_score")
+        
+        # Build response with extracted_data at root level for easy access
+        response = {
             "status": workflow_state.get("status", "unknown"),
             "workflow_id": workflow_state.get("workflow_id"),
             "current_step": workflow_state.get("current_step"),
             "steps_completed": workflow_state.get("steps_completed", []),
-            "data": workflow_state.get("data", {}),
+            "data": response_data,
             "errors": workflow_state.get("errors", []),
             "started_at": workflow_state.get("started_at"),
             "completed_at": workflow_state.get("completed_at")
         }
+        
+        # Add extracted_data at root level if available (for backward compatibility and easy access)
+        if extracted_data:
+            response["extracted_data"] = extracted_data
+            response["confidence_scores"] = confidence_scores
+            if quality_score is not None:
+                response["quality_score"] = quality_score
+            
+            safe_log(
+                logger,
+                logging.INFO,
+                "Added extracted_data to root level of workflow response",
+                extracted_data_count=len(extracted_data),
+                confidence_scores_count=len(confidence_scores),
+                quality_score=quality_score
+            )
+        
+        return response
 
