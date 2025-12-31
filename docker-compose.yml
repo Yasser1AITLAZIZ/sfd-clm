@@ -9,11 +9,13 @@ services:
     ports:
       - "8001:8000"
     environment:
+      - SERVICE_NAME=mock-salesforce
       - LOG_LEVEL=INFO
       - PYTHONUNBUFFERED=1
     volumes:
       - ./mock-salesforce/app:/app/app
       - mock_salesforce_data:/app/data
+      - ./test-data:/app/test-data:ro  # Mount test-data directory as read-only
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 10s
@@ -32,6 +34,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - SERVICE_NAME=backend-mcp
       - LOG_LEVEL=INFO
       - PYTHONUNBUFFERED=1
       - MOCK_SALESFORCE_URL=http://mock-salesforce:8000
@@ -74,6 +77,7 @@ services:
     ports:
       - "8002:8002"
     environment:
+      - SERVICE_NAME=backend-langgraph
       - LOG_LEVEL=INFO
       - PYTHONUNBUFFERED=1
       - MOCK_MODE=true

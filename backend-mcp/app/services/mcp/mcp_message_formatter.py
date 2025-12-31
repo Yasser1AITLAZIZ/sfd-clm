@@ -113,9 +113,10 @@ class MCPMessageFormatter:
     ) -> List[Dict[str, Any]]:
         """
         Serialize documents for MCP protocol.
+        Handles both Pydantic models and dictionaries (from JSON).
         
         Args:
-            documents: List of processed documents
+            documents: List of processed documents (can be Pydantic models or dicts)
             
         Returns:
             List of serialized document dictionaries
@@ -124,20 +125,31 @@ class MCPMessageFormatter:
             serialized = []
             
             for doc in documents:
-                doc_dict = {
-                    "document_id": doc.document_id if hasattr(doc, 'document_id') else "unknown",
-                    "name": doc.name if hasattr(doc, 'name') else "unknown",
-                    "type": doc.type if hasattr(doc, 'type') else "application/pdf",
-                    "url": doc.url if hasattr(doc, 'url') else "",
-                    "metadata": {}
-                }
-                
-                # Add metadata if available
-                if hasattr(doc, 'metadata') and doc.metadata:
-                    if hasattr(doc.metadata, 'model_dump'):
-                        doc_dict["metadata"] = doc.metadata.model_dump()
-                    elif isinstance(doc.metadata, dict):
-                        doc_dict["metadata"] = doc.metadata
+                # Handle dictionaries (from JSON deserialization)
+                if isinstance(doc, dict):
+                    doc_dict = {
+                        "document_id": doc.get("document_id", "unknown"),
+                        "name": doc.get("name", "unknown"),
+                        "type": doc.get("type", "application/pdf"),
+                        "url": doc.get("url", ""),
+                        "metadata": doc.get("metadata", {})
+                    }
+                else:
+                    # Handle Pydantic models or objects with attributes
+                    doc_dict = {
+                        "document_id": getattr(doc, 'document_id', None) or "unknown",
+                        "name": getattr(doc, 'name', None) or "unknown",
+                        "type": getattr(doc, 'type', None) or "application/pdf",
+                        "url": getattr(doc, 'url', None) or "",
+                        "metadata": {}
+                    }
+                    
+                    # Add metadata if available
+                    if hasattr(doc, 'metadata') and doc.metadata:
+                        if hasattr(doc.metadata, 'model_dump'):
+                            doc_dict["metadata"] = doc.metadata.model_dump()
+                        elif isinstance(doc.metadata, dict):
+                            doc_dict["metadata"] = doc.metadata
                 
                 serialized.append(doc_dict)
             

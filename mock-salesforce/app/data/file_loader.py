@@ -15,8 +15,16 @@ logger = get_logger(__name__)
 def get_test_data_base_path() -> Path:
     """
     Get the base path to test-data directory.
-    Assumes test-data is at project root level, relative to mock-salesforce.
+    
+    In Docker: test-data is mounted at /app/test-data
+    In local dev: test-data is at project root level, relative to mock-salesforce
     """
+    # First, check if we're in Docker with test-data mounted at /app/test-data
+    docker_test_data = Path("/app/test-data")
+    if docker_test_data.exists():
+        return docker_test_data
+    
+    # Otherwise, calculate from file location (local development)
     # Get the directory where this file is located (mock-salesforce/app/data)
     current_file = Path(__file__)
     # Go up: app/data -> app -> mock-salesforce -> project root
@@ -154,7 +162,8 @@ def load_fields_for_record(
     base_path: Optional[Path] = None
 ) -> List[SalesforceFormFieldSchema]:
     """
-    Load fields for a given record_id from test-data/fields/{record_id}.json.
+    Load fields for a given record_id from test-data/fields/{record_id}_fields.json.
+    Falls back to {record_id}.json if _fields.json doesn't exist.
     
     Args:
         record_id: Salesforce record ID
@@ -167,7 +176,12 @@ def load_fields_for_record(
         base_path = get_test_data_base_path()
     
     fields_dir = base_path / "fields"
-    fields_file = fields_dir / f"{record_id}.json"
+    # Try {record_id}_fields.json first (actual naming convention)
+    fields_file = fields_dir / f"{record_id}_fields.json"
+    # Fallback to {record_id}.json for backward compatibility
+    if not fields_file.exists():
+        fields_file = fields_dir / f"{record_id}.json"
+    
     fields = []
     
     if not fields_file.exists():
@@ -176,7 +190,8 @@ def load_fields_for_record(
             logging.WARNING,
             "Fields file not found for record_id",
             record_id=record_id,
-            fields_file=str(fields_file)
+            fields_file=str(fields_file),
+            tried_patterns=[f"{record_id}_fields.json", f"{record_id}.json"]
         )
         return fields
     

@@ -270,13 +270,25 @@ class PDFProcessor:
                 return pages
                 
             except Exception as e:
+                error_msg = str(e) if e else "Unknown"
                 safe_log(
                     logger,
                     logging.ERROR,
                     "Error extracting PDF pages with pdf2image",
                     error_type=type(e).__name__,
-                    error_message=str(e) if e else "Unknown"
+                    error_message=error_msg,
+                    error_details=f"Full error: {repr(e)}"
                 )
+                # Log to console for debugging
+                logger.error(f"pdf2image error details: {error_msg}")
+                # Check if it's a poppler error
+                if "poppler" in error_msg.lower() or "pdftoppm" in error_msg.lower():
+                    logger.error(
+                        "pdf2image requires poppler-utils to be installed. "
+                        "On Windows, download from: https://github.com/oschwartz10612/poppler-windows/releases/ "
+                        "On Linux: sudo apt-get install poppler-utils "
+                        "On Mac: brew install poppler"
+                    )
         
         # If no library available, return empty list
         safe_log(

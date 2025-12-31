@@ -367,3 +367,4 @@ Pour tester avec des **données et formulaires complexes**, il manque principale
 8. **Monitoring et métriques** détaillées
 
 **Recommandation**: Commencer par les **corrections critiques (Phase 1)** avant de tester avec des formulaires complexes, sinon les tests échoueront fréquemment à cause des timeouts et truncations.
+
