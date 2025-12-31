@@ -126,6 +126,7 @@ class InitializationResponseSchema(BaseModel):
     """Response schema for initialization flow"""
     status: Literal["initialization"] = "initialization"
     record_id: str
+    session_id: str
     salesforce_data: SalesforceDataResponseSchema
     next_step: Literal["preprocessing"] = "preprocessing"
 

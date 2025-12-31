@@ -200,6 +200,7 @@ async def route_to_initialization(record_id: str, user_message: str) -> Dict[str
         # Create response
         response = InitializationResponseSchema(
             record_id=record_id,
+            session_id=session_id,
             salesforce_data=salesforce_data
         )
         

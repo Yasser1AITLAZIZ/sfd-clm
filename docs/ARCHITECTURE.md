@@ -20,27 +20,27 @@ graph TB
     subgraph Frontend["Frontend"]
         SF["Salesforce Apex Controller"]
     end
-    
+  
     subgraph BackendServices["Backend Services"]
         MCP["Backend MCP (Port 8000)"]
         LG["Backend LangGraph (Port 8002)"]
         MSF["Mock Salesforce (Port 8001)"]
     end
-    
+  
     subgraph Storage["Storage"]
         SQLITE[("SQLite (data/sessions.db)")]
     end
-    
+  
     subgraph External["External"]
-        LLM["LLM APIs (OpenAI/Anthropic)"]
+        LLM["SecureGPT APIs (OpenAI/Anthropic)"]
     end
-    
+  
     SF -->|"HTTP POST"| MCP
     MCP -->|"HTTP POST"| MSF
     MCP -->|"HTTP POST"| LG
     MCP <-->|"Session Storage"| SQLITE
     LG -->|"API Calls"| LLM
-    
+  
     style SF fill:#e1f5ff
     style MCP fill:#fff4e1
     style LG fill:#ffe1e1
@@ -64,7 +64,7 @@ sequenceDiagram
     participant LG as LangGraph
     participant OCR as OCREngine
     participant Extractor as DataExtractor
-    
+  
     SF->>MCP: POST /api/mcp/receive-request
     Note over SF,MCP: record_id, session_id: null, user_message
     MCP->>Router: validate_and_route()
@@ -73,22 +73,22 @@ sequenceDiagram
     Router->>MSF: GET /mock/salesforce/get-record-data
     MSF-->>Router: documents and fields
     Router-->>MCP: Route to initialization
-    
+  
     MCP->>Preproc: execute_preprocessing()
     Preproc->>Preproc: Process documents
     Preproc->>Preproc: Build fields dictionary
     Preproc-->>MCP: Preprocessed data
-    
+  
     MCP->>Prompt: build_prompt()
     Prompt-->>MCP: Optimized prompt
-    
+  
     MCP->>LG: POST /api/langgraph/process-mcp-request
     LG->>OCR: Extract text from PDFs
     OCR-->>LG: OCR text and blocks
     LG->>Extractor: Extract field values
     Extractor-->>LG: extracted_data and confidence_scores
     LG-->>MCP: Response with extracted data
-    
+  
     MCP->>Storage: create_session(record_id, context)
     Storage-->>MCP: session_id
     MCP-->>SF: status: success, workflow_result, session_id
@@ -104,22 +104,22 @@ sequenceDiagram
     participant Storage as SQLiteStorage
     participant Prompt as PromptBuilder
     participant LG as LangGraph
-    
+  
     SF->>MCP: POST /api/mcp/receive-request
     Note over SF,MCP: record_id, session_id, user_message
     MCP->>Router: validate_and_route()
     Router->>Storage: get_session(session_id)
     Storage-->>Router: Session data
     Router-->>MCP: Route to continuation
-    
+  
     Note over MCP: Skip preprocessing - Use existing session context
-    
+  
     MCP->>Prompt: build_prompt(continuation)
     Prompt-->>MCP: Context-aware prompt
-    
+  
     MCP->>LG: POST /api/langgraph/process-mcp-request
     LG-->>MCP: Response with extracted data
-    
+  
     MCP->>Storage: update_session(session_id, new_data)
     MCP-->>SF: status: success, workflow_result
 ```
@@ -132,19 +132,19 @@ Le Workflow Orchestrator coordonne 7 étapes principales :
 flowchart TD
     START([RequestReceived]) --> STEP1["1. Validation and Routing"]
     STEP1 --> CHECK{"Session exists?"}
-    
+  
     CHECK -->|No| STEP2A["2. Preprocessing - Process documents"]
     CHECK -->|Yes| STEP2B["2. Preprocessing - SKIPPED"]
-    
+  
     STEP2A --> STEP3["3. Prompt Building"]
     STEP2B --> STEP3
-    
+  
     STEP3 --> STEP4["4. Prompt Optimization"]
     STEP4 --> STEP5["5. MCP Formatting"]
     STEP5 --> STEP6["6. MCP Sending"]
     STEP6 --> STEP7["7. Response Handling"]
     STEP7 --> END([WorkflowComplete])
-    
+  
     style START fill:#90EE90
     style STEP1 fill:#e1f5ff
     style STEP2A fill:#fff4e1
@@ -160,33 +160,40 @@ flowchart TD
 ### Détails des Étapes
 
 #### Étape 1: Validation & Routing
+
 - Validation des paramètres d'entrée (record_id, session_id, user_message)
 - Vérification de l'existence de la session dans SQLite
 - Décision : Initialization ou Continuation
 - Récupération des données Salesforce si nouvelle session
 
 #### Étape 2: Preprocessing
+
 - **Initialization** : Traitement des documents, construction du dictionnaire de champs
 - **Continuation** : Ignoré (utilise le contexte de session existante)
 
 #### Étape 3: Prompt Building
+
 - Construction du prompt selon le type de scénario (extraction, clarification, validation)
 - Intégration du contexte (documents, champs, historique de session)
 
 #### Étape 4: Prompt Optimization
+
 - Optimisation du prompt pour améliorer la précision
 - Application de techniques de prompt engineering
 
 #### Étape 5: MCP Formatting
+
 - Formatage du message selon le protocole MCP
 - Préparation du contexte (documents en base64, fields dictionary)
 
 #### Étape 6: MCP Sending
+
 - Envoi du message formaté au service LangGraph
 - Gestion des retries et timeouts
 - Réception de la réponse avec données extraites
 
 #### Étape 7: Response Handling
+
 - Extraction des données et scores de confiance
 - Construction de la réponse finale
 - Mise à jour de la session (si applicable)
@@ -203,7 +210,7 @@ flowchart LR
     EXTRACT --> VALIDATE["Validation"]
     VALIDATE --> SUPERVISOR
     SUPERVISOR -->|Complete| END([Response])
-    
+  
     style START fill:#90EE90
     style SUPERVISOR fill:#e1f5ff
     style OCR fill:#fff4e1
@@ -261,7 +268,9 @@ CREATE INDEX idx_status ON sessions(status);
 ### Structure JSON Détaillée
 
 #### `input_data` (JSON)
+
 Contient toutes les données envoyées au langgraph :
+
 ```json
 {
     "salesforce_data": {
@@ -287,7 +296,9 @@ Contient toutes les données envoyées au langgraph :
 ```
 
 #### `langgraph_response` (JSON)
+
 Contient la réponse complète du langgraph :
+
 ```json
 {
     "extracted_data": {
@@ -311,7 +322,9 @@ Contient la réponse complète du langgraph :
 ```
 
 #### `interactions_history` (JSON Array)
+
 Historique complet des interactions avec traçabilité :
+
 ```json
 [
     {
@@ -334,7 +347,9 @@ Historique complet des interactions avec traçabilité :
 ```
 
 #### `processing_metadata` (JSON)
+
 Métadonnées de traitement avec timestamps :
+
 ```json
 {
     "preprocessing_completed": true,
@@ -501,7 +516,7 @@ Le système supporte deux formats de logs :
 Cette architecture permet un traitement robuste et scalable des sinistres avec extraction intelligente de données depuis documents. Le système est conçu pour être modulaire, maintenable et évolutif.
 
 Pour plus de détails sur l'utilisation, consultez :
+
 - [README.md](../README.md)
 - [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)
 - [PIPELINE_DOCUMENTATION.md](PIPELINE_DOCUMENTATION.md)
-

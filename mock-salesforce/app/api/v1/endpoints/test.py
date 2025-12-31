@@ -1,9 +1,10 @@
 """Test endpoints for setting up test data"""
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from typing import Any, Dict, List, Optional
 import logging
 from pydantic import BaseModel
+from pathlib import Path
 
 from app.models.schemas import DocumentSchema, SalesforceFormFieldSchema
 from app.data.mock_records import MOCK_RECORDS
@@ -193,4 +194,47 @@ async def clear_test_data(record_id: str) -> JSONResponse:
                 }
             }
         )
+
+
+@router.get(
+    "/documents/{filename}",
+    summary="Serve test data files",
+    description="Serves files from the test-data/documents directory"
+)
+async def serve_file(filename: str):
+    """Serve a file from the test-data/documents directory"""
+    try:
+        # Get the test-data base path
+        from app.data.file_loader import get_test_data_base_path
+        test_data_path = get_test_data_base_path()
+        documents_dir = test_data_path / "documents"
+        file_path = documents_dir / filename
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Serving file",
+            filename=filename,
+            file_path=str(file_path)
+        )
+        
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type="application/pdf"  # Default to PDF, but could detect
+        )
+        
+    except Exception as e:
+        safe_log(
+            logger,
+            logging.ERROR,
+            "Error serving file",
+            filename=filename,
+            error_type=type(e).__name__,
+            error_message=str(e) if e else "Unknown error"
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
 

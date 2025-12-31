@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 import logging
 
 from app.core.logging import get_logger, safe_log
+from app.core.exceptions import WorkflowError
 from app.models.schemas import (
     FieldToFillResponseSchema,
     EnrichedFieldSchema,
@@ -56,15 +57,11 @@ class FieldsDictionaryPreprocessor:
             if not fields_to_fill:
                 safe_log(
                     logger,
-                    logging.WARNING,
-                    "Empty fields list provided"
+                    logging.ERROR,
+                    "Empty fields list provided - blocking workflow"
                 )
-                return FieldsDictionarySchema(
-                    fields=[],
-                    empty_fields=[],
-                    prefilled_fields=[],
-                    prioritized_fields=[]
-                )
+                from app.core.exceptions import WorkflowError
+                raise WorkflowError("No fields to process - empty fields list")
             
             enriched_fields = []
             empty_fields = []

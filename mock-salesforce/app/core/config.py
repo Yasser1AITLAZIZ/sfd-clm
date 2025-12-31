@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     port: int = 8000
     
     # File server configuration
-    file_server_url: str = "http://localhost:8003"
+    file_server_url: str = "http://localhost:8001"
     
     class Config:
         env_file = ".env"

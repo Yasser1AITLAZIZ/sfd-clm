@@ -443,6 +443,16 @@ class WorkflowOrchestrator:
             routing_status = routing_result.get("status", "unknown")
             
             if routing_status == "initialization":
+                # Extract session_id from routing result for new sessions
+                if routing_result.get("session_id"):
+                    session_id = routing_result["session_id"]
+                    safe_log(
+                        logger,
+                        logging.INFO,
+                        "Session ID updated from routing",
+                        session_id=session_id,
+                        workflow_id=workflow_id
+                    )
                 # New session: need preprocessing
                 # Step 2: Preprocessing
                 step_start_time = time.time()
