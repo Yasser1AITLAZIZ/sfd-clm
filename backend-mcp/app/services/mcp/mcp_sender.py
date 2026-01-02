@@ -223,9 +223,9 @@ class MCPSender:
         request_body = await self._convert_mcp_message_to_langgraph_format(mcp_message)
         
         # Calculate adaptive timeout based on complexity
-        fields_count = len(request_body.get("fields_dictionary", {}))
+        form_json_count = len(request_body.get("form_json", []))
         documents_count = len(request_body.get("documents", []))
-        calculated_timeout = self.calculate_timeout(fields_count, documents_count)
+        calculated_timeout = self.calculate_timeout(form_json_count, documents_count)
         
         async with httpx.AsyncClient(timeout=calculated_timeout) as client:
             response = await client.post(url, json=request_body, headers=headers)
@@ -257,7 +257,7 @@ class MCPSender:
                     ]
                 }
             ],
-            "fields_dictionary": {...}
+            "form_json": [...]
         }
         """
         import base64
@@ -372,63 +372,17 @@ class MCPSender:
                     "metadata": doc_data.get("metadata", {})
                 })
         
-        # Convert fields dictionary
-        fields_dictionary = {}
-        context_fields = mcp_message.context.get("fields", []) if mcp_message.context else []
+        # Extract form_json from context (send as-is, no conversion)
+        form_json = mcp_message.context.get("form_json", []) if mcp_message.context else []
         
         safe_log(
             logger,
             logging.INFO,
-            "Converting fields to fields_dictionary",
+            "Extracting form_json from context",
             record_id=record_id,
-            context_fields_count=len(context_fields),
-            context_fields_type=type(context_fields).__name__
+            form_json_count=len(form_json) if isinstance(form_json, list) else 0,
+            form_json_type=type(form_json).__name__
         )
-        
-        for i, field in enumerate(context_fields):
-            # Handle both dict and Pydantic objects
-            if isinstance(field, dict):
-                field_dict = field
-            elif hasattr(field, 'model_dump'):
-                # Pydantic model - convert to dict
-                field_dict = field.model_dump()
-            elif hasattr(field, '__dict__'):
-                # Regular object - convert to dict
-                field_dict = field.__dict__
-            else:
-                safe_log(
-                    logger,
-                    logging.WARNING,
-                    "Skipping field with unsupported type",
-                    record_id=record_id,
-                    field_index=i,
-                    field_type=type(field).__name__
-                )
-                continue
-            
-            # Generate unique field_name: use apiName, field_name, or create from label/index
-            field_name = field_dict.get("field_name") or field_dict.get("apiName")
-            if not field_name or field_name == "unknown":
-                # Create field_name from label (sanitized) or use index
-                label = field_dict.get("label", "")
-                if label:
-                    # Sanitize label to create valid field name
-                    import re
-                    field_name = re.sub(r'[^a-zA-Z0-9_]', '_', label.lower().strip())
-                    field_name = re.sub(r'_+', '_', field_name)  # Replace multiple underscores
-                    field_name = field_name.strip('_')  # Remove leading/trailing underscores
-                    if not field_name:
-                        field_name = f"field_{i+1}"
-                else:
-                    field_name = f"field_{i+1}"
-            
-            fields_dictionary[field_name] = {
-                "label": field_dict.get("label", field_name),
-                "type": field_dict.get("field_type") or field_dict.get("type", "text"),
-                "required": field_dict.get("required", False),
-                "possibleValues": field_dict.get("possibleValues", field_dict.get("possible_values", [])),
-                "defaultValue": field_dict.get("defaultValue") or field_dict.get("default_value")
-            }
         
         # Validate documents before sending
         documents_validation_errors = []
@@ -493,9 +447,9 @@ class MCPSender:
         request_body = {
             "record_id": record_id,
             "session_id": session_id,
-            "user_request": user_request,
+            "user_request": user_request,  # Prompt as-is
             "documents": valid_documents,
-            "fields_dictionary": fields_dictionary
+            "form_json": form_json  # Form JSON as-is, no fields_dictionary
         }
         
         safe_log(
@@ -505,9 +459,7 @@ class MCPSender:
             record_id=record_id,
             documents_count=len(valid_documents),
             total_pages=sum(len(doc.get("pages", [])) for doc in valid_documents),
-            context_fields_count=len(context_fields),
-            fields_dictionary_count=len(fields_dictionary),
-            fields_dictionary_keys=list(fields_dictionary.keys())[:10] if fields_dictionary else [],
+            form_json_count=len(form_json) if isinstance(form_json, list) else 0,
             has_validation_errors=len(documents_validation_errors) > 0
         )
         
@@ -584,7 +536,8 @@ class MCPSender:
             # Extract data from response structure: {"status": "success", "data": {...}}
             if response_data.get("status") == "success" and "data" in response_data:
                 data = response_data["data"]
-                extracted_data = data.get("extracted_data", {})
+                filled_form_json = data.get("filled_form_json", [])  # Primary: filled form JSON
+                extracted_data = data.get("extracted_data", {})  # Deprecated: kept for backward compatibility
                 confidence_scores = data.get("confidence_scores", {})
                 quality_score = data.get("quality_score")
                 
@@ -608,11 +561,13 @@ class MCPSender:
                 # Fallback: try to parse as LanggraphResponseSchema directly
                 try:
                     langgraph_response = LanggraphResponseSchema(**response_data)
+                    filled_form_json = langgraph_response.filled_form_json if langgraph_response.filled_form_json else []
                     extracted_data = langgraph_response.extracted_data if langgraph_response.extracted_data else {}
                     confidence_scores = langgraph_response.confidence_scores if langgraph_response.confidence_scores else {}
                     quality_score = langgraph_response.quality_score
                 except Exception:
                     # Last resort: extract from top level
+                    filled_form_json = response_data.get("filled_form_json", [])
                     extracted_data = response_data.get("extracted_data", {})
                     confidence_scores = response_data.get("confidence_scores", {})
                     quality_score = response_data.get("quality_score")
@@ -620,7 +575,8 @@ class MCPSender:
             # Build MCP response
             mcp_response = MCPResponseSchema(
                 message_id="",  # Will be set by caller
-                extracted_data=extracted_data,
+                filled_form_json=filled_form_json,  # Same structure as input
+                extracted_data=extracted_data,  # Deprecated: kept for backward compatibility
                 confidence_scores=confidence_scores,
                 status="success"
             )
@@ -629,6 +585,7 @@ class MCPSender:
                 logger,
                 logging.INFO,
                 "Langgraph response handled",
+                filled_form_json_count=len(filled_form_json) if filled_form_json else 0,
                 extracted_fields_count=len(extracted_data),
                 confidence_scores_count=len(confidence_scores),
                 quality_score=quality_score
@@ -650,6 +607,7 @@ class MCPSender:
                 message_id="",
                 status="error",
                 error=f"Invalid response: {str(e) if e else 'Unknown error'}",
+                filled_form_json=[],
                 extracted_data={},
                 confidence_scores={}
             )

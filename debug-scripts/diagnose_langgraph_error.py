@@ -7,6 +7,7 @@ import logging
 import asyncio
 import httpx
 from pathlib import Path
+from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -62,25 +63,46 @@ async def diagnose_langgraph_error():
         return
     
     if langgraph_format:
+        logger.info(f"\n📥 INPUT DATA STRUCTURE (Sent to LangGraph):")
+        logger.info(f"   - Record ID: {langgraph_format.get('record_id', 'N/A')}")
+        logger.info(f"   - Session ID: {langgraph_format.get('session_id', 'N/A')}")
+        logger.info(f"   - User Request length: {len(langgraph_format.get('user_request', ''))} chars")
         logger.info(f"   - Documents: {len(langgraph_format.get('documents', []))}")
+        logger.info(f"   - Form JSON fields: {len(langgraph_format.get('form_json', []))}")
         logger.info(f"   - Fields Dictionary: {len(langgraph_format.get('fields_dictionary', {}))}")
         
-        # Check document structure
+        # Check document structure (INPUT)
         documents = langgraph_format.get('documents', [])
         if documents:
             doc = documents[0]
-            logger.info(f"\n3. Analyzing document structure...")
-            logger.info(f"   - Document ID: {doc.get('id', 'N/A')}")
-            logger.info(f"   - Document type: {doc.get('type', 'N/A')}")
-            logger.info(f"   - Pages count: {len(doc.get('pages', []))}")
+            logger.info(f"\n   📄 Document Structure (INPUT):")
+            logger.info(f"      - Document ID: {doc.get('id', 'N/A')}")
+            logger.info(f"      - Document type: {doc.get('type', 'N/A')}")
+            logger.info(f"      - Pages count: {len(doc.get('pages', []))}")
             
             if doc.get('pages'):
-                page = doc['pages'][0]
-                logger.info(f"   - First page keys: {list(page.keys())}")
-                logger.info(f"   - Has image_b64: {'image_b64' in page}")
-                if 'image_b64' in page:
-                    img_len = len(page['image_b64'])
-                    logger.info(f"   - Image base64 length: {img_len} chars")
+                logger.info(f"      - Page-by-Page Structure:")
+                for i, page in enumerate(doc.get('pages', []), 1):
+                    logger.info(f"        Page {i}:")
+                    logger.info(f"          - page_number: {page.get('page_number', 'N/A')}")
+                    logger.info(f"          - Has image_b64: {'image_b64' in page}")
+                    if 'image_b64' in page:
+                        img_len = len(page['image_b64'])
+                        logger.info(f"          - Image base64 length: {img_len:,} chars")
+                    logger.info(f"          - image_mime: {page.get('image_mime', 'N/A')}")
+        
+        # Check form_json structure (INPUT)
+        form_json = langgraph_format.get('form_json', [])
+        if form_json:
+            logger.info(f"\n   📋 Form JSON Structure (INPUT):")
+            logger.info(f"      - Total fields: {len(form_json)}")
+            logger.info(f"      - Sample fields (first 3):")
+            for i, field in enumerate(form_json[:3], 1):
+                logger.info(f"        [{i}] {field.get('label', 'N/A')}:")
+                logger.info(f"            - type: {field.get('type', 'N/A')}")
+                logger.info(f"            - required: {field.get('required', 'N/A')}")
+                logger.info(f"            - possibleValues count: {len(field.get('possibleValues', []))}")
+                logger.info(f"            - dataValue_target_AI (initial): {field.get('dataValue_target_AI', 'N/A')}")
         
         # Test JSON serialization
         logger.info(f"\n4. Testing JSON serialization...")
@@ -112,12 +134,82 @@ async def diagnose_langgraph_error():
                     logger.info("✅ Request successful")
                     try:
                         response_data = response.json()
+                        logger.info(f"\n📤 OUTPUT DATA STRUCTURE (Received from LangGraph):")
                         logger.info(f"   - Status: {response_data.get('status', 'N/A')}")
+                        
                         if 'data' in response_data:
                             data = response_data['data']
-                            logger.info(f"   - Extracted data count: {len(data.get('extracted_data', {}))}")
-                            logger.info(f"   - Confidence scores count: {len(data.get('confidence_scores', {}))}")
-                            logger.info(f"   - Quality score: {data.get('quality_score', 'N/A')}")
+                            
+                            # Check filled_form_json (NEW - Page-based implementation)
+                            filled_form_json = data.get('filled_form_json', [])
+                            logger.info(f"\n   📋 Filled Form JSON (Page-Based Implementation - OUTPUT):")
+                            logger.info(f"      - Total fields: {len(filled_form_json) if filled_form_json else 0}")
+                            
+                            if filled_form_json:
+                                fields_with_quality = [f for f in filled_form_json if f.get("quality_score") is not None]
+                                fields_without_quality = [f for f in filled_form_json if f.get("quality_score") is None]
+                                
+                                logger.info(f"      - Fields with quality_score: {len(fields_with_quality)}/{len(filled_form_json)}")
+                                if fields_without_quality:
+                                    logger.warning(f"      ⚠️  Fields missing quality_score: {len(fields_without_quality)}")
+                                
+                                # Show sample fields with before/after comparison
+                                logger.info(f"\n      - Sample Fields (Before → After):")
+                                for i, field in enumerate(filled_form_json[:5], 1):
+                                    label = field.get('label', 'N/A')
+                                    initial_value = "null"  # Would need to compare with input
+                                    final_value = field.get('dataValue_target_AI', 'N/A')
+                                    confidence = field.get('confidence', 'N/A')
+                                    quality_score = field.get('quality_score', 'N/A')
+                                    
+                                    logger.info(f"        [{i}] {label}:")
+                                    logger.info(f"            - dataValue_target_AI: {initial_value} → {str(final_value)[:60]}")
+                                    logger.info(f"            - confidence: {confidence}")
+                                    logger.info(f"            - quality_score: {quality_score}")  # NEW: Per-field quality
+                                
+                                # Verify quality_score calculation
+                                if fields_with_quality:
+                                    avg_quality = sum(f.get("quality_score", 0.0) for f in fields_with_quality) / len(fields_with_quality)
+                                    logger.info(f"\n      - Average per-field quality_score: {avg_quality:.4f}")
+                            
+                            # Overall quality score
+                            overall_quality_score = data.get('quality_score')
+                            logger.info(f"\n   📊 Overall Quality Score (OUTPUT):")
+                            logger.info(f"      - Overall quality_score: {overall_quality_score}")
+                            if overall_quality_score is not None and filled_form_json:
+                                field_quality_scores = [f.get("quality_score", 0.0) for f in filled_form_json if f.get("quality_score") is not None]
+                                if field_quality_scores:
+                                    expected_avg = sum(field_quality_scores) / len(field_quality_scores)
+                                    logger.info(f"      - Expected (avg of per-field): {expected_avg:.4f}")
+                                    if abs(expected_avg - overall_quality_score) < 0.01:
+                                        logger.info(f"      ✅ Overall quality_score matches average of per-field quality_scores")
+                                    else:
+                                        logger.warning(f"      ⚠️  Overall quality_score differs (diff: {abs(expected_avg - overall_quality_score):.4f})")
+                            
+                            # Legacy fields (backward compatibility)
+                            logger.info(f"\n   📦 Legacy Fields (Backward Compatibility - OUTPUT):")
+                            logger.info(f"      - Extracted data count: {len(data.get('extracted_data', {}))}")
+                            logger.info(f"      - Confidence scores count: {len(data.get('confidence_scores', {}))}")
+                            
+                            # Save detailed output for analysis
+                            output_file = project_root / "debug-scripts" / f"langgraph_detailed_output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                            with open(output_file, 'w', encoding='utf-8') as f:
+                                json.dump({
+                                    "input": {
+                                        "documents_count": len(langgraph_format.get('documents', [])),
+                                        "form_json_count": len(langgraph_format.get('form_json', [])),
+                                        "sample_document": documents[0] if documents else None,
+                                        "sample_form_fields": form_json[:3] if form_json else []
+                                    },
+                                    "output": {
+                                        "filled_form_json": filled_form_json,
+                                        "extracted_data": data.get('extracted_data', {}),
+                                        "confidence_scores": data.get('confidence_scores', {}),
+                                        "quality_score": overall_quality_score,
+                                        "processing_time": data.get('processing_time')
+                                    }
+                                }, f, indent=2, ensure_ascii=False, default=str)
+                            logger.info(f"\n   💾 Detailed input/output saved to: {output_file.name}")
                     except Exception as e:
                         logger.error(f"❌ Error parsing response JSON: {e}")
                         logger.error(f"   Response text (first 500 chars): {response.text[:500]}")

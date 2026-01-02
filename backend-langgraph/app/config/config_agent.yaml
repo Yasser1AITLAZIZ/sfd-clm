@@ -10,13 +10,20 @@ ocr:
   model: "gpt-4.1-2025-04-14"
   temperature: 0.0
   concurrency_limit: 12
-  ocr_timeout_per_page: 60.0  # Timeout per page for OCR
+  # Timeout per page for OCR (60s)
+  # OCR processing is parallel (up to 12 concurrent pages), so 60s per page is sufficient
+  # Total OCR time for N pages ≈ 60s (parallel processing)
+  ocr_timeout_per_page: 60.0
 
 mapping:
   provider: "openai"
   model: "gpt-4.1-2025-04-14"
   temperature: 0.0
-  llm_extraction_timeout: 120.0  # Timeout for LLM extraction
+  # Timeout per page for field mapping (120s)
+  # Mapping is sequential (one page at a time) and more complex than OCR
+  # Total mapping time for N pages = N × 120s (sequential processing)
+  # This timeout is intentionally 2x OCR timeout due to complexity
+  llm_extraction_timeout: 120.0
 
 limits:
   # Text blocks limits

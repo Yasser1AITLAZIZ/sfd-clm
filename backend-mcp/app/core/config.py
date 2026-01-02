@@ -27,10 +27,10 @@ class Settings(BaseSettings):
     # Langgraph configuration
     langgraph_url: str = "http://localhost:8002"
     langgraph_api_key: Optional[str] = None
-    langgraph_timeout: float = 120.0
+    langgraph_timeout: float = 175.0  # Increased from 120.0 to 150-200s range
     
     # Adaptive timeout configuration
-    timeout_base: float = 30.0  # Base timeout in seconds
+    timeout_base: float = 50.0  # Base timeout in seconds (increased from 30.0 for more headroom)
     timeout_per_field: float = 0.5  # Additional seconds per field
     timeout_per_document: float = 10.0  # Additional seconds per document
     timeout_max: float = 300.0  # Maximum timeout (5 minutes)

@@ -1,6 +1,6 @@
 """
 Step 6: Test MCP Message Formatting
-Tests MCP message formatting with documents and fields
+Tests MCP message formatting with documents and form_json
 """
 
 import sys
@@ -31,25 +31,31 @@ TEST_RECORD_ID = "001XX000001"
 def load_step3_output():
     """Load step 3 output"""
     step3_output = project_root / "debug-scripts" / "step3_output.json"
-    if step3_output.exists():
-        try:
-            with open(step3_output, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.warning(f"Could not load step3 output: {e}")
-    return None
+    if not step3_output.exists():
+        raise FileNotFoundError(
+            f"Step 3 output not found: {step3_output}\n"
+            "Please run step3_test_preprocessing_pipeline.py first"
+        )
+    try:
+        with open(step3_output, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Could not load step3 output: {e}")
 
 
-def load_step5_output():
-    """Load step 5 output"""
-    step5_output = project_root / "debug-scripts" / "step5_output.json"
-    if step5_output.exists():
-        try:
-            with open(step5_output, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.warning(f"Could not load step5 output: {e}")
-    return None
+def load_step4_output():
+    """Load step 4 output"""
+    step4_output = project_root / "debug-scripts" / "step4_output.json"
+    if not step4_output.exists():
+        raise FileNotFoundError(
+            f"Step 4 output not found: {step4_output}\n"
+            "Please run step4_test_prompt_building.py first"
+        )
+    try:
+        with open(step4_output, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Could not load step4 output: {e}")
 
 
 def extract_documents_from_preprocessed_data(preprocessed_data: any) -> list:
@@ -69,8 +75,8 @@ def extract_documents_from_preprocessed_data(preprocessed_data: any) -> list:
     return data.get("processed_documents", [])
 
 
-def extract_fields_from_preprocessed_data(preprocessed_data: any) -> list:
-    """Helper function to extract fields"""
+def extract_form_json_from_preprocessed_data(preprocessed_data: any) -> list:
+    """Helper function to extract form_json from salesforce_data.fields_to_fill"""
     if not preprocessed_data:
         return []
     
@@ -79,19 +85,19 @@ def extract_fields_from_preprocessed_data(preprocessed_data: any) -> list:
     elif isinstance(preprocessed_data, dict):
         data = preprocessed_data
     else:
-        if hasattr(preprocessed_data, 'fields_dictionary'):
-            fields_dict = preprocessed_data.fields_dictionary
-            if hasattr(fields_dict, 'fields'):
-                return fields_dict.fields
-            elif isinstance(fields_dict, dict):
-                return fields_dict.get("fields", [])
+        # Try to access directly
+        if hasattr(preprocessed_data, 'salesforce_data'):
+            salesforce_data = preprocessed_data.salesforce_data
+            if hasattr(salesforce_data, 'fields_to_fill'):
+                return salesforce_data.fields_to_fill
         return []
     
-    fields_dictionary = data.get("fields_dictionary", {})
-    if isinstance(fields_dictionary, dict):
-        return fields_dictionary.get("fields", [])
-    elif hasattr(fields_dictionary, 'fields'):
-        return fields_dictionary.fields
+    # Extract from nested structure
+    salesforce_data = data.get("salesforce_data", {})
+    if isinstance(salesforce_data, dict):
+        return salesforce_data.get("fields_to_fill", [])
+    elif hasattr(salesforce_data, 'fields_to_fill'):
+        return salesforce_data.fields_to_fill
     
     return []
 
@@ -106,44 +112,47 @@ async def test_mcp_message_formatter():
         from app.services.mcp.mcp_message_formatter import MCPMessageFormatter
         from datetime import datetime
         
-        # Load step 5 output (optimized prompt)
-        step5_data = load_step5_output()
-        if not step5_data:
-            logger.error("❌ Step 5 output not found - cannot test formatting")
-            return None
+        # Load step 4 output (prompt)
+        step4_data = load_step4_output()
+        prompt = step4_data.get("prompt", "")
+        if not prompt:
+            raise ValueError("No prompt found in step 4 output")
         
-        optimized_prompt = step5_data.get("prompt", "")
-        if not optimized_prompt:
-            logger.error("❌ No prompt found in step 5 output")
-            return None
-        
-        logger.info(f"Optimized prompt length: {len(optimized_prompt)} characters")
+        logger.info(f"Prompt length: {len(prompt)} characters")
         
         # Load step 3 output (for context)
         step3_data = load_step3_output()
-        if not step3_data:
-            logger.error("❌ Step 3 output not found - cannot get context")
-            return None
         
-        # Extract fields and documents using helper functions
-        logger.info("\nExtracting fields and documents from preprocessed data...")
-        fields = extract_fields_from_preprocessed_data(step3_data)
+        # Extract form_json and documents using helper functions
+        logger.info("\nExtracting form_json and documents from preprocessed data...")
+        form_json = extract_form_json_from_preprocessed_data(step3_data)
         documents = extract_documents_from_preprocessed_data(step3_data)
         
-        logger.info(f"  - Fields extracted: {len(fields)}")
+        logger.info(f"  - Form JSON fields extracted: {len(form_json)}")
         logger.info(f"  - Documents extracted: {len(documents)}")
         
-        if not fields:
-            logger.error("  ❌ WARNING: No fields extracted! This will cause problems!")
-            logger.error("     Check if fields_dictionary.fields exists in step3 output")
+        if not form_json:
+            raise ValueError("No form_json extracted! Check if salesforce_data.fields_to_fill exists in step3 output")
         
         if not documents:
             logger.warning("  ⚠️  WARNING: No documents extracted!")
         
-        # Prepare context
+        # Verify form_json structure
+        logger.info("\n--- Form JSON Structure Verification ---")
+        for i, field in enumerate(form_json[:3], 1):  # Show first 3
+            logger.info(f"\n  Field {i}:")
+            if isinstance(field, dict):
+                logger.info(f"    - Label: {field.get('label', 'N/A')}")
+                logger.info(f"    - Type: {field.get('type', 'N/A')}")
+                logger.info(f"    - dataValue_target_AI: {field.get('dataValue_target_AI', 'N/A')}")
+                logger.info(f"    - defaultValue: {field.get('defaultValue', 'N/A')}")
+            else:
+                logger.info(f"    - Field object: {type(field).__name__}")
+        
+        # Prepare context (new architecture: form_json instead of fields)
         context = {
             "documents": documents,
-            "fields": fields,
+            "form_json": form_json,  # New architecture: form_json
             "session_id": None
         }
         
@@ -157,7 +166,7 @@ async def test_mcp_message_formatter():
         logger.info("\nFormatting MCP message...")
         formatter = MCPMessageFormatter()
         mcp_message = formatter.format_message(
-            prompt=optimized_prompt,
+            prompt=prompt,
             context=context,
             metadata=metadata
         )
@@ -168,119 +177,92 @@ async def test_mcp_message_formatter():
         
         # Check context
         if hasattr(mcp_message, 'context') and mcp_message.context:
-            context_docs = mcp_message.context.get("documents", []) if isinstance(mcp_message.context, dict) else []
-            context_fields = mcp_message.context.get("fields", []) if isinstance(mcp_message.context, dict) else []
-            logger.info(f"  - Context documents: {len(context_docs)}")
-            logger.info(f"  - Context fields: {len(context_fields)}")
+            context_data = mcp_message.context
+            logger.info(f"  - Context keys: {list(context_data.keys())}")
             
-            if not context_docs:
-                logger.error("  ❌ WARNING: No documents in MCP message context!")
-            if not context_fields:
-                logger.error("  ❌ WARNING: No fields in MCP message context!")
-        
-        # Check metadata
-        if hasattr(mcp_message, 'metadata') and mcp_message.metadata:
-            logger.info(f"  - Metadata record_id: {mcp_message.metadata.record_id if hasattr(mcp_message.metadata, 'record_id') else 'N/A'}")
+            # Check form_json in context
+            if "form_json" in context_data:
+                form_json_in_context = context_data["form_json"]
+                logger.info(f"  - Form JSON in context: {len(form_json_in_context)} fields")
+                
+                # Verify normalization
+                for field in form_json_in_context[:2]:  # Check first 2
+                    if isinstance(field, dict):
+                        if field.get("dataValue_target_AI") is not None:
+                            logger.warning(f"    ⚠️  Field has non-null dataValue_target_AI: {field.get('dataValue_target_AI')}")
+                        if field.get("defaultValue") is not None:
+                            logger.warning(f"    ⚠️  Field has non-null defaultValue: {field.get('defaultValue')}")
+            else:
+                logger.warning("  ⚠️  form_json not found in context!")
+        else:
+            logger.warning("  ⚠️  Context is empty or missing!")
         
         # Save output
-        if hasattr(mcp_message, 'model_dump'):
-            data_dict = mcp_message.model_dump()
-        else:
-            data_dict = {
-                "message_id": getattr(mcp_message, 'message_id', None),
-                "prompt": getattr(mcp_message, 'prompt', None),
-                "context": mcp_message.context if hasattr(mcp_message, 'context') else {},
-                "metadata": mcp_message.metadata.__dict__ if hasattr(mcp_message, 'metadata') and hasattr(mcp_message.metadata, '__dict__') else {}
+        # Convert Pydantic models to dicts for JSON serialization
+        metadata_dict = {}
+        if hasattr(mcp_message, 'metadata') and mcp_message.metadata:
+            if hasattr(mcp_message.metadata, 'model_dump'):
+                metadata_dict = mcp_message.metadata.model_dump()
+            elif isinstance(mcp_message.metadata, dict):
+                metadata_dict = mcp_message.metadata
+            else:
+                # Fallback: try to convert to dict
+                metadata_dict = dict(mcp_message.metadata) if hasattr(mcp_message.metadata, '__dict__') else {}
+        
+        context_dict = {}
+        if hasattr(mcp_message, 'context') and mcp_message.context:
+            if isinstance(mcp_message.context, dict):
+                context_dict = mcp_message.context
+            else:
+                # If it's a Pydantic model, convert it
+                context_dict = mcp_message.context.model_dump() if hasattr(mcp_message.context, 'model_dump') else {}
+        
+        output_data = {
+            "message_id": mcp_message.message_id,
+            "prompt": mcp_message.prompt,
+            "context": context_dict,
+            "metadata": metadata_dict,  # Now a dict, not a string
+            "metadata_info": {
+                "record_id": TEST_RECORD_ID,
+                "record_type": step3_data.get("record_type", "Claim"),
+                "form_json_fields_count": len(form_json),
+                "documents_count": len(documents)
             }
+        }
         
         output_file = project_root / "debug-scripts" / "step6_output.json"
         with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(data_dict, f, indent=2, default=str, ensure_ascii=False)
+            json.dump(output_data, f, indent=2, default=str, ensure_ascii=False)
         logger.info(f"\n✅ Output saved to: {output_file}")
         
         return mcp_message
         
     except Exception as e:
-        logger.error(f"❌ ERROR in MCP formatting: {type(e).__name__}: {str(e)}", exc_info=True)
-        return None
-
-
-async def test_document_serialization():
-    """Test document serialization for MCP"""
-    logger.info("\n" + "=" * 80)
-    logger.info("TESTING: Document Serialization")
-    logger.info("=" * 80)
-    
-    try:
-        from app.services.mcp.mcp_message_formatter import MCPMessageFormatter
-        
-        # Load step 3 output
-        step3_data = load_step3_output()
-        if not step3_data:
-            logger.error("❌ Step 3 output not found")
-            return None
-        
-        documents = extract_documents_from_preprocessed_data(step3_data)
-        logger.info(f"Serializing {len(documents)} documents...")
-        
-        formatter = MCPMessageFormatter()
-        serialized = formatter.serialize_documents_for_mcp(documents)
-        
-        logger.info(f"✅ Serialized {len(serialized)} documents")
-        for i, doc in enumerate(serialized, 1):
-            logger.info(f"  Document {i}:")
-            if isinstance(doc, dict):
-                logger.info(f"    - ID: {doc.get('document_id', doc.get('id', 'N/A'))}")
-                logger.info(f"    - Name: {doc.get('name', 'N/A')}")
-                logger.info(f"    - URL: {doc.get('url', 'N/A')}")
-                logger.info(f"    - Keys: {list(doc.keys())}")
-            else:
-                logger.info(f"    - Type: {type(doc).__name__}")
-        
-        return serialized
-        
-    except Exception as e:
-        logger.error(f"❌ ERROR in document serialization: {type(e).__name__}: {str(e)}", exc_info=True)
-        return None
+        logger.error(f"❌ ERROR in MCP formatting test: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise
 
 
 async def main():
     """Main test function"""
     logger.info("=" * 80)
-    logger.info("STEP 6: MCP FORMATTING TEST")
+    logger.info("STEP 6: MCP MESSAGE FORMATTING TEST")
     logger.info("=" * 80)
     logger.info(f"Test Record ID: {TEST_RECORD_ID}")
     logger.info("")
     
-    # Step 6.1: Test document serialization
-    serialized_docs = await test_document_serialization()
-    
-    # Step 6.2: Test MCP message formatting
-    mcp_message = await test_mcp_message_formatter()
-    
-    # Summary
-    logger.info("\n" + "=" * 80)
-    logger.info("STEP 6 SUMMARY")
-    logger.info("=" * 80)
-    
-    if serialized_docs:
-        logger.info(f"✅ Document serialization: PASSED ({len(serialized_docs)} documents)")
-    else:
-        logger.error("❌ Document serialization: FAILED")
-    
-    if mcp_message:
+    try:
+        mcp_message = await test_mcp_message_formatter()
+        
+        logger.info("\n" + "=" * 80)
+        logger.info("STEP 6 SUMMARY")
+        logger.info("=" * 80)
         logger.info("✅ MCP message formatting: PASSED")
-        # Check if context has data
-        if hasattr(mcp_message, 'context') and mcp_message.context:
-            context_docs = mcp_message.context.get("documents", []) if isinstance(mcp_message.context, dict) else []
-            context_fields = mcp_message.context.get("fields", []) if isinstance(mcp_message.context, dict) else []
-            if not context_docs:
-                logger.error("   ⚠️  WARNING: No documents in MCP message!")
-            if not context_fields:
-                logger.error("   ⚠️  WARNING: No fields in MCP message!")
-                logger.error("   This will cause the graph to receive null data!")
-    else:
-        logger.error("❌ MCP message formatting: FAILED")
+        logger.info(f"  - Message ID: {mcp_message.message_id}")
+        logger.info(f"  - Form JSON fields: {len(mcp_message.context.get('form_json', []))}")
+        
+    except Exception as e:
+        logger.error(f"❌ STEP 6 FAILED: {type(e).__name__}: {str(e)}")
+        raise
     
     logger.info("\n" + "=" * 80)
     logger.info("STEP 6 COMPLETE - Check step6_output.log and step6_output.json for details")
@@ -289,4 +271,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

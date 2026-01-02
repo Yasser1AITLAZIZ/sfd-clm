@@ -75,25 +75,32 @@ async def ocr_and_mapping_tool(
         ocr_manager = _get_ocr_manager()
         state = await ocr_manager.process(state)
         
-        # Step 2: Field Mapping
-        print("🗺️ [OCR+Mapping Tool] Step 2: Field mapping...")
+        # Step 2: Field Mapping (page-by-page)
+        print("🗺️ [OCR+Mapping Tool] Step 2: Field mapping (page-by-page)...")
         mapping_manager = _get_mapping_manager()
         mapping_results = await mapping_manager.map_fields_to_ocr(
-            ocr_text=state.ocr_text or "",
-            text_blocks=state.text_blocks,
-            fields_dictionary=state.fields_dictionary
+            documents=state.documents,
+            form_json=state.form_json  # Form JSON as-is
         )
         
-        # Calculate quality score (average of confidence scores)
+        # Get filled_form_json from results (with per-field quality_scores)
+        filled_form_json = mapping_results.get("filled_form_json", [])
+        confidence_scores = mapping_results.get("confidence_scores", {})
+        
+        # Calculate overall quality_score as average of per-field quality_scores
         quality_score = None
-        if mapping_results.get("confidence_scores"):
-            quality_score = sum(mapping_results["confidence_scores"].values()) / len(mapping_results["confidence_scores"])
+        if filled_form_json:
+            field_quality_scores = [f.get("quality_score", 0.0) for f in filled_form_json if f.get("quality_score") is not None]
+            if field_quality_scores:
+                quality_score = sum(field_quality_scores) / len(field_quality_scores)
+            # Fallback: use mapping manager's overall quality_score if available
+            if quality_score is None:
+                quality_score = mapping_results.get("quality_score")
         
         # Prepare update patch
         patch = {
-            "field_mappings": mapping_results.get("field_mappings", {}),
-            "extracted_data": mapping_results.get("extracted_data", {}),
-            "confidence_scores": mapping_results.get("confidence_scores", {}),
+            "filled_form_json": filled_form_json,  # Same structure as input with dataValue_target_AI filled
+            "confidence_scores": confidence_scores,
             "ocr_text": state.ocr_text,
             "text_blocks": [block.model_dump() for block in state.text_blocks],
             "documents": [doc.model_dump() for doc in state.documents]
@@ -104,7 +111,7 @@ async def ocr_and_mapping_tool(
         # Create tool message
         content = json.dumps({
             "status": "completed",
-            "fields_extracted": len(mapping_results.get("extracted_data", {})),
+            "fields_filled": len(filled_form_json),
             "quality_score": quality_score,
             "ocr_text_length": len(state.ocr_text or ""),
             "text_blocks_count": len(state.text_blocks)
@@ -117,7 +124,7 @@ async def ocr_and_mapping_tool(
             tool_call_id=tool_call_id
         ))
         
-        print(f"✅ [OCR+Mapping Tool] Completed: {len(mapping_results.get('extracted_data', {}))} fields extracted")
+        print(f"✅ [OCR+Mapping Tool] Completed: {len(filled_form_json)} fields filled")
         if quality_score is not None:
             print(f"📊 [OCR+Mapping Tool] Quality score: {quality_score:.2f}")
         else:

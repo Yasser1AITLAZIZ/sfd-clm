@@ -113,9 +113,6 @@ class DocumentPreprocessor:
             # Extract metadata
             metadata = await self.extract_document_metadata(document)
             
-            # Validate document quality
-            quality_score = await self.validate_document_quality(document, metadata)
-            
             # Get document attributes safely
             doc_id = self._get_document_attr(document, "document_id") or f"doc_{index}"
             doc_name = self._get_document_attr(document, "name") or f"document_{index}"
@@ -133,7 +130,6 @@ class DocumentPreprocessor:
                 type=doc_type,
                 indexed=doc_indexed,
                 metadata=metadata,
-                quality_score=quality_score,
                 processed=True
             )
             
@@ -207,62 +203,4 @@ class DocumentPreprocessor:
                 orientation=None
             )
     
-    async def validate_document_quality(
-        self,
-        document: Any,
-        metadata: DocumentMetadataSchema
-    ) -> float:
-        """
-        Validate document quality and return score (0-100).
-        
-        Args:
-            document: Document schema or dict
-            metadata: Document metadata
-            
-        Returns:
-            Quality score from 0 to 100
-        """
-        try:
-            score = 100.0
-            
-            # Check if document has required fields
-            doc_id = self._get_document_attr(document, "document_id")
-            doc_name = self._get_document_attr(document, "name")
-            doc_url = self._get_document_attr(document, "url")
-            doc_type = self._get_document_attr(document, "type")
-            doc_indexed = self._get_document_attr(document, "indexed")
-            
-            if not doc_id:
-                score -= 20
-            if not doc_name:
-                score -= 10
-            if not doc_url:
-                score -= 15
-            
-            # Check document type
-            if doc_type:
-                valid_types = ["application/pdf", "image/jpeg", "image/png", "image/jpg"]
-                if doc_type.lower() not in valid_types:
-                    score -= 30
-            
-            # Check if indexed
-            if doc_indexed is False:
-                score -= 5
-            
-            # Ensure score is between 0 and 100
-            score = max(0.0, min(100.0, score))
-            
-            return score
-            
-        except Exception as e:
-            doc_id = self._get_document_attr(document, "document_id", "unknown")
-            safe_log(
-                logger,
-                logging.ERROR,
-                "Error validating document quality",
-                document_id=doc_id,
-                error_type=type(e).__name__,
-                error_message=str(e) if e else "Unknown"
-            )
-            return 50.0  # Default score on error
 

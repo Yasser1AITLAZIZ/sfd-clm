@@ -10,7 +10,7 @@ from app.models.schemas import (
     ContextSummarySchema
 )
 from .document_preprocessor import DocumentPreprocessor
-from .fields_preprocessor import FieldsDictionaryPreprocessor
+from .form_json_normalizer import normalize_form_json
 
 logger = get_logger(__name__)
 
@@ -21,7 +21,6 @@ class PreprocessingPipeline:
     def __init__(self):
         """Initialize preprocessing pipeline"""
         self.document_preprocessor = DocumentPreprocessor()
-        self.fields_preprocessor = FieldsDictionaryPreprocessor()
         
         safe_log(
             logger,
@@ -38,7 +37,7 @@ class PreprocessingPipeline:
         
         Steps:
         1. Process documents
-        2. Prepare fields dictionary
+        2. Normalize form JSON (ensure dataValue_target_AI exists, defaultValue is null)
         3. Cross-validation
         4. Generate context summary
         
@@ -107,37 +106,35 @@ class PreprocessingPipeline:
                 processed_count=len(processed_documents)
             )
             
-            # Step 2: Prepare fields dictionary
+            # Step 2: Normalize form JSON
             safe_log(
                 logger,
                 logging.INFO,
-                "Step 2: Preparing fields dictionary",
+                "Step 2: Normalizing form JSON",
                 record_id=record_id
             )
             
-            safe_log(
-                logger,
-                logging.INFO,
-                "Preparing fields dictionary",
-                record_id=record_id,
-                input_fields_count=len(fields_to_fill) if fields_to_fill else 0,
-                record_type=record_type
-            )
-            
-            fields_dictionary = await self.fields_preprocessor.prepare_fields_dictionary(
-                fields_to_fill,
-                record_type
-            )
+            # Normalize form JSON: ensure dataValue_target_AI exists and defaultValue is null
+            normalized_fields = normalize_form_json(fields_to_fill)
             
             safe_log(
                 logger,
                 logging.INFO,
-                "Fields dictionary prepared",
+                "Form JSON normalized",
                 record_id=record_id,
                 input_fields_count=len(fields_to_fill) if fields_to_fill else 0,
-                output_fields_count=len(fields_dictionary.fields) if hasattr(fields_dictionary, 'fields') else 0,
-                has_fields_dictionary=fields_dictionary is not None
+                normalized_fields_count=len(normalized_fields)
             )
+            
+            # Handle empty fields gracefully (don't block workflow)
+            if not normalized_fields:
+                safe_log(
+                    logger,
+                    logging.WARNING,
+                    "No fields to process - empty fields list",
+                    record_id=record_id
+                )
+                # Continue with empty list, don't raise error
             
             # Step 3: Cross-validation
             safe_log(
@@ -149,7 +146,7 @@ class PreprocessingPipeline:
             
             validation_results = await self._cross_validate(
                 processed_documents,
-                fields_dictionary
+                normalized_fields
             )
             
             safe_log(
@@ -171,7 +168,7 @@ class PreprocessingPipeline:
             context_summary = await self.generate_context_summary(
                 record_type,
                 processed_documents,
-                fields_dictionary
+                normalized_fields
             )
             
             safe_log(
@@ -186,21 +183,35 @@ class PreprocessingPipeline:
             processing_time = (end_time - start_time).total_seconds()
             
             # Calculate data size (approximate)
-            data_size = self._calculate_data_size(processed_documents, fields_dictionary)
+            data_size = self._calculate_data_size(processed_documents, normalized_fields)
+            
+            # Rebuild salesforce_data with normalized fields
+            # Handle both dict and Pydantic model
+            if isinstance(salesforce_data, dict):
+                salesforce_data_with_normalized = {
+                    **salesforce_data,
+                    "fields_to_fill": normalized_fields
+                }
+                salesforce_data_obj = SalesforceDataResponseSchema(**salesforce_data_with_normalized)
+            else:
+                # Pydantic model - create new with normalized fields
+                salesforce_data_dict = salesforce_data.model_dump() if hasattr(salesforce_data, 'model_dump') else salesforce_data.__dict__
+                salesforce_data_dict["fields_to_fill"] = normalized_fields
+                salesforce_data_obj = SalesforceDataResponseSchema(**salesforce_data_dict)
             
             # Build preprocessed data
             preprocessed_data = PreprocessedDataSchema(
                 record_id=record_id,
                 record_type=record_type,
                 processed_documents=processed_documents,
-                fields_dictionary=fields_dictionary,
+                salesforce_data=salesforce_data_obj,
                 context_summary=context_summary,
                 validation_results=validation_results,
                 metrics={
                     "processing_time_seconds": processing_time,
                     "data_size_bytes": data_size,
                     "documents_count": len(processed_documents),
-                    "fields_count": len(fields_dictionary.fields)
+                    "fields_count": len(normalized_fields)
                 }
             )
             
@@ -242,15 +253,18 @@ class PreprocessingPipeline:
                 error_message=str(e) if e else "Unknown error"
             )
             # Return minimal preprocessed data on error
-            from app.services.preprocessing.fields_preprocessor import FieldsDictionaryPreprocessor
-            temp_preprocessor = FieldsDictionaryPreprocessor()
-            empty_fields_dict = await temp_preprocessor.prepare_fields_dictionary([])
+            empty_salesforce_data = SalesforceDataResponseSchema(
+                record_id=record_id,
+                record_type=record_type,
+                documents=[],
+                fields_to_fill=[]
+            )
             
             return PreprocessedDataSchema(
                 record_id=record_id,
                 record_type=record_type,
                 processed_documents=[],
-                fields_dictionary=empty_fields_dict,
+                salesforce_data=empty_salesforce_data,
                 context_summary=ContextSummarySchema(
                     record_type=record_type,
                     objective="",
@@ -270,14 +284,14 @@ class PreprocessingPipeline:
     async def _cross_validate(
         self,
         processed_documents: list,
-        fields_dictionary: Any
+        normalized_fields: list
     ) -> Dict[str, Any]:
         """
         Cross-validate consistency between documents and fields.
         
         Args:
             processed_documents: List of processed documents
-            fields_dictionary: Fields dictionary schema
+            normalized_fields: List of normalized field dictionaries
             
         Returns:
             Validation results
@@ -290,7 +304,7 @@ class PreprocessingPipeline:
             if not processed_documents:
                 warnings.append("No documents available for processing")
             
-            if not fields_dictionary.fields:
+            if not normalized_fields:
                 warnings.append("No fields to fill")
             
             # TODO: Add more sophisticated cross-validation
@@ -324,7 +338,7 @@ class PreprocessingPipeline:
         self,
         record_type: str,
         processed_documents: list,
-        fields_dictionary: Any
+        normalized_fields: list
     ) -> ContextSummarySchema:
         """
         Generate context summary for LLM.
@@ -332,7 +346,7 @@ class PreprocessingPipeline:
         Args:
             record_type: Type of record
             processed_documents: List of processed documents
-            fields_dictionary: Fields dictionary schema
+            normalized_fields: List of normalized field dictionaries
             
         Returns:
             Context summary schema
@@ -344,19 +358,27 @@ class PreprocessingPipeline:
                 documents_available.append({
                     "document_id": doc.document_id if hasattr(doc, 'document_id') else "unknown",
                     "name": doc.name if hasattr(doc, 'name') else "unknown",
-                    "type": doc.type if hasattr(doc, 'type') else "unknown",
-                    "quality_score": doc.quality_score if hasattr(doc, 'quality_score') else 0
+                    "type": doc.type if hasattr(doc, 'type') else "unknown"
                 })
             
-            # Build fields list
+            # Build fields list from normalized fields
             fields_to_extract = []
-            for field in fields_dictionary.prioritized_fields:
-                fields_to_extract.append({
-                    "field_name": field.field_name if hasattr(field, 'field_name') else "unknown",
-                    "field_type": field.field_type if hasattr(field, 'field_type') else "text",
-                    "required": field.required if hasattr(field, 'required') else True,
-                    "label": field.label if hasattr(field, 'label') else "Unknown"
-                })
+            for field in normalized_fields:
+                if isinstance(field, dict):
+                    fields_to_extract.append({
+                        "label": field.get("label", "Unknown"),
+                        "type": field.get("type", "text"),
+                        "required": field.get("required", False),
+                        "apiName": field.get("apiName")
+                    })
+                else:
+                    # Handle Pydantic model
+                    fields_to_extract.append({
+                        "label": getattr(field, 'label', 'Unknown'),
+                        "type": getattr(field, 'type', 'text'),
+                        "required": getattr(field, 'required', False),
+                        "apiName": getattr(field, 'apiName', None)
+                    })
             
             # Determine objective based on record type
             objective = f"Extraire et remplir les champs manquants pour un {record_type}"
@@ -398,7 +420,7 @@ class PreprocessingPipeline:
     def _calculate_data_size(
         self,
         processed_documents: list,
-        fields_dictionary: Any
+        normalized_fields: list
     ) -> int:
         """Calculate approximate data size in bytes"""
         try:
@@ -409,8 +431,8 @@ class PreprocessingPipeline:
                 size += 1024  # 1KB per document estimate
             
             # Estimate fields size
-            if fields_dictionary and hasattr(fields_dictionary, 'fields'):
-                size += len(fields_dictionary.fields) * 256  # 256 bytes per field estimate
+            if normalized_fields:
+                size += len(normalized_fields) * 256  # 256 bytes per field estimate
             
             return size
             
@@ -439,22 +461,11 @@ class PreprocessingPipeline:
                     {
                         "id": doc.document_id if hasattr(doc, 'document_id') else "unknown",
                         "name": doc.name if hasattr(doc, 'name') else "unknown",
-                        "type": doc.type if hasattr(doc, 'type') else "unknown",
-                        "quality": doc.quality_score if hasattr(doc, 'quality_score') else 0
+                        "type": doc.type if hasattr(doc, 'type') else "unknown"
                     }
                     for doc in preprocessed_data.processed_documents
                 ],
-                "fields": [
-                    {
-                        "name": field.field_name if hasattr(field, 'field_name') else "unknown",
-                        "type": field.field_type if hasattr(field, 'field_type') else "text",
-                        "required": field.required if hasattr(field, 'required') else True,
-                        "label": field.label if hasattr(field, 'label') else "Unknown",
-                        "description": field.description if hasattr(field, 'description') else "",
-                        "examples": field.examples if hasattr(field, 'examples') else []
-                    }
-                    for field in preprocessed_data.fields_dictionary.prioritized_fields
-                ]
+                "form_json": preprocessed_data.salesforce_data.fields_to_fill if hasattr(preprocessed_data, 'salesforce_data') and hasattr(preprocessed_data.salesforce_data, 'fields_to_fill') else []
             }
             
         except Exception as e:

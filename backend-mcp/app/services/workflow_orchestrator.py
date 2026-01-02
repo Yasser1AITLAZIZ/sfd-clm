@@ -15,7 +15,6 @@ from app.core.exceptions import (
 from app.services.session_router import validate_and_route, get_session_manager
 from app.services.preprocessing.preprocessing_pipeline import PreprocessingPipeline
 from app.services.prompting.prompt_builder import PromptBuilder
-from app.services.prompting.prompt_optimizer import PromptOptimizer
 from app.services.mcp.mcp_message_formatter import MCPMessageFormatter
 from app.services.mcp.mcp_sender import MCPSender
 from app.services.workflow_step_storage import WorkflowStepStorage
@@ -113,7 +112,6 @@ class WorkflowOrchestrator:
         """Initialize workflow orchestrator"""
         self.preprocessing_pipeline = PreprocessingPipeline()
         self.prompt_builder = PromptBuilder()
-        self.prompt_optimizer = PromptOptimizer()
         self.mcp_formatter = MCPMessageFormatter()
         self.mcp_sender = MCPSender()
         
@@ -136,12 +134,6 @@ class WorkflowOrchestrator:
                 logger,
                 logging.ERROR,
                 "PromptBuilder.build_prompt method not found! Available methods: " + str([m for m in dir(self.prompt_builder) if not m.startswith('_')])
-            )
-        if not hasattr(self.prompt_optimizer, 'optimize_prompt'):
-            safe_log(
-                logger,
-                logging.ERROR,
-                "PromptOptimizer.optimize_prompt method not found! Available methods: " + str([m for m in dir(self.prompt_optimizer) if not m.startswith('_')])
             )
         
         safe_log(
@@ -287,7 +279,7 @@ class WorkflowOrchestrator:
         session_id = request_data.get("session_id") or "none"
         
         # Total number of steps in workflow
-        TOTAL_STEPS = 7
+        TOTAL_STEPS = 6
         
         workflow_state = {
             "workflow_id": workflow_id,
@@ -718,159 +710,47 @@ class WorkflowOrchestrator:
                     processing_time=step_elapsed
                 )
             
-            # Step 4: Prompt Optimization
-            step_start_time = time.time()
-            workflow_state["current_step"] = "prompt_optimization"
-            step_id_4 = self._create_step_record(
-                session_id=session_id,
-                workflow_id=workflow_id,
-                step_name="prompt_optimization",
-                step_order=4,
-                input_data={
-                    "record_id": record_id,
-                    "prompt": workflow_state["data"]["prompt_building"].get("prompt", "")
-                }
-            )
-            if step_id_4:
-                self._update_step_record(step_id_4, "in_progress")
-            
-            log_progress(
-                logger,
-                logging.INFO,
-                "Starting Prompt Optimization",
-                step_number=4,
-                total_steps=TOTAL_STEPS,
-                step_name="prompt_optimization",
-                workflow_id=workflow_id
-            )
-            
-            try:
-                prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
-                # Try to call optimize_prompt, with fallback if method doesn't exist
-                # Use getattr with default to safely check and call the method
-                optimize_prompt_method = getattr(self.prompt_optimizer, 'optimize_prompt', None)
-                if optimize_prompt_method and callable(optimize_prompt_method):
-                    optimized_prompt = await optimize_prompt_method(prompt)
-                else:
-                    # Fallback: use optimize method if optimize_prompt doesn't exist
-                    safe_log(
-                        logger,
-                        logging.WARNING,
-                        "optimize_prompt method not found, using fallback",
-                        workflow_id=workflow_id,
-                        available_methods=str([m for m in dir(self.prompt_optimizer) if not m.startswith('_')])
-                    )
-                    from app.models.schemas import PromptResponseSchema
-                    prompt_response = PromptResponseSchema(
-                        prompt=prompt,
-                        scenario_type="extraction",
-                        metadata={}
-                    )
-                    optimized_result = await self.prompt_optimizer.optimize(prompt_response)
-                    optimized_prompt = {
-                        "prompt": optimized_result.prompt if optimized_result.prompt else prompt,
-                        "optimizations_applied": optimized_result.optimizations_applied if optimized_result.optimizations_applied else []
-                    }
-                
-                workflow_state["data"]["prompt_optimization"] = {
-                    "status": "completed",
-                    "optimized_prompt": optimized_prompt.get("prompt", prompt),
-                    "optimizations_applied": optimized_prompt.get("optimizations_applied", [])
-                }
-                workflow_state["steps_completed"].append("prompt_optimization")
-                step_elapsed = time.time() - step_start_time
-                self._update_step_record(
-                    step_id_4,
-                    "completed",
-                    output_data={
-                        "status": "completed",
-                        "optimized_prompt": optimized_prompt.get("prompt", "")[:500] if optimized_prompt.get("prompt") else None
-                    },
-                    processing_time=step_elapsed
-                )
-                log_timing(
-                    logger,
-                    logging.INFO,
-                    "Step 4 completed: Prompt Optimization",
-                    elapsed_time=step_elapsed,
-                    workflow_id=workflow_id
-                )
-                
-            except Exception as e:
-                error_msg = str(e) if e else "Unknown error"
-                safe_log(
-                    logger,
-                    logging.ERROR,
-                    "Step 4 failed: Prompt Optimization",
-                    workflow_id=workflow_id,
-                    error_type=type(e).__name__,
-                    error_message=error_msg,
-                    traceback=traceback.format_exc()
-                )
-                # Use original prompt if optimization fails
-                prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
-                workflow_state["data"]["prompt_optimization"] = {
-                    "status": "completed",
-                    "optimized_prompt": prompt,
-                    "optimizations_applied": []
-                }
-                workflow_state["steps_completed"].append("prompt_optimization")
-                step_elapsed = time.time() - step_start_time
-                self._update_step_record(
-                    step_id_4,
-                    "completed",
-                    output_data={"status": "completed", "optimized_prompt": prompt[:500]},
-                    processing_time=step_elapsed
-                )
-            
-            # Step 5: MCP Formatting
+            # Step 4: MCP Formatting
             step_start_time = time.time()
             workflow_state["current_step"] = "mcp_formatting"
             
             # Prepare context for MCP (before creating step record)
-            optimized_prompt = workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
+            # Use prompt directly from prompt_building (no optimization step)
+            prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
             preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
             
-            # Get fields from preprocessed_data using helper function
-            fields = extract_fields_from_preprocessed_data(preprocessed_data)
+            # Get fields_to_fill from salesforce_data (original format)
+            fields_to_fill = []
+            salesforce_data = None
             
-            # Log diagnostic information
-            safe_log(
-                logger,
-                logging.INFO,
-                "Extracting fields from preprocessed_data",
-                workflow_id=workflow_id,
-                preprocessed_data_type=type(preprocessed_data).__name__,
-                fields_count=len(fields),
-                has_preprocessed_data=preprocessed_data is not None
-            )
+            # Try to get from preprocessed_data first
+            if preprocessed_data:
+                if hasattr(preprocessed_data, 'salesforce_data'):
+                    salesforce_data = preprocessed_data.salesforce_data
+                elif isinstance(preprocessed_data, dict):
+                    salesforce_data = preprocessed_data.get("salesforce_data")
             
-            if not fields:
-                # Fallback: get fields from salesforce_data in routing_result
+            # Fallback: get from routing_result
+            if not salesforce_data:
                 salesforce_data = routing_result.get("salesforce_data", {})
-                if salesforce_data:
-                    # Handle both Pydantic model and dict
-                    if hasattr(salesforce_data, 'fields_to_fill'):
-                        fields = salesforce_data.fields_to_fill
-                    elif isinstance(salesforce_data, dict):
-                        fields = salesforce_data.get("fields_to_fill", [])
-                    
-                    safe_log(
-                        logger,
-                        logging.INFO,
-                        "Using fallback fields from salesforce_data",
-                        workflow_id=workflow_id,
-                        fields_count=len(fields)
-                    )
+            
+            if salesforce_data:
+                # Handle both Pydantic model and dict
+                if hasattr(salesforce_data, 'fields_to_fill'):
+                    fields_to_fill = salesforce_data.fields_to_fill
+                elif isinstance(salesforce_data, dict):
+                    fields_to_fill = salesforce_data.get("fields_to_fill", [])
+            
+            # Normalize form JSON
+            from app.services.preprocessing.form_json_normalizer import normalize_form_json
+            form_json = normalize_form_json(fields_to_fill)
             
             # Get documents from preprocessed_data using helper function
             documents = extract_documents_from_preprocessed_data(preprocessed_data)
             
             if not documents:
-                # Fallback: get documents from salesforce_data in routing_result
-                salesforce_data = routing_result.get("salesforce_data", {})
+                # Fallback: get documents from salesforce_data
                 if salesforce_data:
-                    # Handle both Pydantic model and dict
                     if hasattr(salesforce_data, 'documents'):
                         documents = salesforce_data.documents
                     elif isinstance(salesforce_data, dict):
@@ -881,36 +761,36 @@ class WorkflowOrchestrator:
                 logging.INFO,
                 "Context prepared for MCP",
                 workflow_id=workflow_id,
-                fields_count=len(fields),
+                form_json_count=len(form_json),
                 documents_count=len(documents)
             )
             
             # Prepare context for MCP
             context = {
                 "documents": documents,
-                "fields": fields,
+                "form_json": form_json,  # Normalized form JSON
                 "session_id": session_id if session_id != "none" else None
             }
             
-            step_id_5 = self._create_step_record(
+            step_id_4 = self._create_step_record(
                 session_id=session_id,
                 workflow_id=workflow_id,
                 step_name="mcp_formatting",
-                step_order=5,
+                step_order=4,
                 input_data={
                     "record_id": record_id,
-                    "prompt": optimized_prompt,
+                    "prompt": prompt,
                     "context": context
                 }
             )
-            if step_id_5:
-                self._update_step_record(step_id_5, "in_progress")
+            if step_id_4:
+                self._update_step_record(step_id_4, "in_progress")
             
             log_progress(
                 logger,
                 logging.INFO,
                 "Starting MCP Formatting",
-                step_number=5,
+                step_number=4,
                 total_steps=TOTAL_STEPS,
                 step_name="mcp_formatting",
                 workflow_id=workflow_id
@@ -925,7 +805,7 @@ class WorkflowOrchestrator:
                 }
                 
                 mcp_message = self.mcp_formatter.format_message(
-                    prompt=optimized_prompt,
+                    prompt=prompt,
                     context=context,
                     metadata=metadata
                 )
@@ -940,7 +820,7 @@ class WorkflowOrchestrator:
                 workflow_state["steps_completed"].append("mcp_formatting")
                 step_elapsed = time.time() - step_start_time
                 self._update_step_record(
-                    step_id_5,
+                    step_id_4,
                     "completed",
                     output_data={"status": "completed"},
                     processing_time=step_elapsed
@@ -948,7 +828,7 @@ class WorkflowOrchestrator:
                 log_timing(
                     logger,
                     logging.INFO,
-                    "Step 5 completed: MCP Formatting",
+                    "Step 4 completed: MCP Formatting",
                     elapsed_time=step_elapsed,
                     workflow_id=workflow_id
                 )
@@ -963,7 +843,7 @@ class WorkflowOrchestrator:
                 workflow_state["status"] = "failed"
                 step_elapsed = time.time() - step_start_time
                 self._update_step_record(
-                    step_id_5,
+                    step_id_4,
                     "failed",
                     error_message=error_msg,
                     error_details={"error_type": type(e).__name__},
@@ -972,7 +852,7 @@ class WorkflowOrchestrator:
                 safe_log(
                     logger,
                     logging.ERROR,
-                    "Step 5 failed: MCP Formatting",
+                    "Step 4 failed: MCP Formatting",
                     workflow_id=workflow_id,
                     error_type=type(e).__name__,
                     error_message=error_msg,
@@ -980,34 +860,34 @@ class WorkflowOrchestrator:
                 )
                 return self._build_workflow_response(workflow_state)
             
-            # Step 6: MCP Sending
+            # Step 5: MCP Sending
             step_start_time = time.time()
             workflow_state["current_step"] = "mcp_sending"
-            step_id_6 = self._create_step_record(
+            step_id_5 = self._create_step_record(
                 session_id=session_id,
                 workflow_id=workflow_id,
                 step_name="mcp_sending",
-                step_order=6,
+                step_order=5,
                 input_data={
                     "record_id": record_id,
-                    "prompt": workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
+                    "prompt": workflow_state["data"]["prompt_building"].get("prompt", "")
                 }
             )
-            if step_id_6:
-                self._update_step_record(step_id_6, "in_progress")
+            if step_id_5:
+                self._update_step_record(step_id_5, "in_progress")
             
             log_progress(
                 logger,
                 logging.INFO,
                 "Starting MCP Sending",
-                step_number=6,
+                step_number=5,
                 total_steps=TOTAL_STEPS,
                 step_name="mcp_sending",
                 workflow_id=workflow_id
             )
             
             try:
-                # Reuse the formatted message from step 5
+                # Reuse the formatted message from step 4
                 mcp_message = workflow_state.get("_mcp_message")
                 if not mcp_message:
                     # Fallback: format message if not stored (should not happen)
@@ -1017,7 +897,7 @@ class WorkflowOrchestrator:
                         "MCP message not found in workflow state, formatting again",
                         workflow_id=workflow_id
                     )
-                    optimized_prompt = workflow_state["data"]["prompt_optimization"].get("optimized_prompt", "")
+                    prompt = workflow_state["data"]["prompt_building"].get("prompt", "")
                     preprocessed_data = workflow_state["data"].get("preprocessing", {}).get("preprocessed_data", {})
                     
                     # Get fields from preprocessed_data using helper function
@@ -1057,7 +937,7 @@ class WorkflowOrchestrator:
                         "timestamp": datetime.utcnow().isoformat()
                     }
                     mcp_message = self.mcp_formatter.format_message(
-                        prompt=optimized_prompt,
+                        prompt=prompt,
                         context=context,
                         metadata=metadata
                     )
@@ -1071,7 +951,7 @@ class WorkflowOrchestrator:
                             if session:
                                 input_data = session.get("input_data", {})
                                 # Update input_data with current prompt and context
-                                input_data["prompt"] = optimized_prompt
+                                input_data["prompt"] = prompt
                                 input_data["context"] = context
                                 input_data["metadata"] = metadata
                                 input_data["user_message"] = request_data.get("user_message", "")
@@ -1086,7 +966,7 @@ class WorkflowOrchestrator:
                                     "interaction_id": interaction_id,
                                     "request": {
                                         "user_message": request_data.get("user_message", ""),
-                                        "prompt": optimized_prompt,
+                                        "prompt": prompt,
                                         "timestamp": datetime.utcnow().isoformat()
                                     },
                                     "response": None,
@@ -1208,7 +1088,7 @@ class WorkflowOrchestrator:
                 workflow_state["steps_completed"].append("mcp_sending")
                 step_elapsed = time.time() - step_start_time
                 self._update_step_record(
-                    step_id_6,
+                    step_id_5,
                     "completed",
                     output_data={
                         "extracted_data": extracted_data,
@@ -1220,7 +1100,7 @@ class WorkflowOrchestrator:
                 log_timing(
                     logger,
                     logging.INFO,
-                    "Step 6 completed: MCP Sending",
+                    "Step 5 completed: MCP Sending",
                     elapsed_time=step_elapsed,
                     workflow_id=workflow_id,
                     extracted_fields=len(extracted_data)
@@ -1236,7 +1116,7 @@ class WorkflowOrchestrator:
                 workflow_state["status"] = "failed"
                 step_elapsed = time.time() - step_start_time
                 self._update_step_record(
-                    step_id_6,
+                    step_id_5,
                     "failed",
                     error_message=error_msg,
                     error_details={"error_type": type(e).__name__},
@@ -1245,7 +1125,7 @@ class WorkflowOrchestrator:
                 safe_log(
                     logger,
                     logging.ERROR,
-                    "Step 6 failed: MCP Sending",
+                    "Step 5 failed: MCP Sending",
                     workflow_id=workflow_id,
                     error_type=type(e).__name__,
                     error_message=error_msg,
@@ -1417,7 +1297,8 @@ class WorkflowOrchestrator:
         """Build workflow response from state"""
         response_data = workflow_state.get("data", {})
         
-        # Extract extracted_data from response_handling or mcp_sending for easy access
+        # Extract filled_form_json and extracted_data from response_handling or mcp_sending
+        filled_form_json = []
         extracted_data = {}
         confidence_scores = {}
         quality_score = None
@@ -1425,19 +1306,21 @@ class WorkflowOrchestrator:
         # Try to get from response_handling first (most recent)
         response_handling = response_data.get("response_handling", {})
         if response_handling:
+            filled_form_json = response_handling.get("filled_form_json", []) or []
             extracted_data = response_handling.get("extracted_data", {}) or {}
             confidence_scores = response_handling.get("confidence_scores", {}) or {}
         
         # Fallback to mcp_sending if response_handling doesn't have it
-        if not extracted_data:
+        if not filled_form_json:
             mcp_sending = response_data.get("mcp_sending", {})
             mcp_response = mcp_sending.get("mcp_response", {}) if mcp_sending else {}
             if mcp_response:
+                filled_form_json = mcp_response.get("filled_form_json", []) or []
                 extracted_data = mcp_response.get("extracted_data", {}) or {}
                 confidence_scores = mcp_response.get("confidence_scores", {}) or {}
                 quality_score = mcp_response.get("quality_score")
         
-        # Build response with extracted_data at root level for easy access
+        # Build response with filled_form_json at root level for easy access
         response = {
             "status": workflow_state.get("status", "unknown"),
             "workflow_id": workflow_state.get("workflow_id"),
@@ -1449,19 +1332,30 @@ class WorkflowOrchestrator:
             "completed_at": workflow_state.get("completed_at")
         }
         
-        # Add extracted_data at root level if available (for backward compatibility and easy access)
+        # Add filled_form_json at root level if available (primary response format)
+        if filled_form_json:
+            response["filled_form_json"] = filled_form_json
+            response["confidence_scores"] = confidence_scores
+            
+            safe_log(
+                logger,
+                logging.INFO,
+                "Added filled_form_json to root level of workflow response",
+                filled_form_json_count=len(filled_form_json),
+                confidence_scores_count=len(confidence_scores)
+            )
+        
+        # Add extracted_data at root level if available (for backward compatibility)
         if extracted_data:
             response["extracted_data"] = extracted_data
-            response["confidence_scores"] = confidence_scores
             if quality_score is not None:
                 response["quality_score"] = quality_score
             
             safe_log(
                 logger,
                 logging.INFO,
-                "Added extracted_data to root level of workflow response",
+                "Added extracted_data to root level of workflow response (backward compatibility)",
                 extracted_data_count=len(extracted_data),
-                confidence_scores_count=len(confidence_scores),
                 quality_score=quality_score
             )
         

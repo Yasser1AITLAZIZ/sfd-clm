@@ -276,14 +276,16 @@ async def process_mcp_request(request: Request) -> JSONResponse:
                 ]
             }
         ],
-        "fields_dictionary": {
-            "field_name": {
+        "form_json": [
+            {
                 "label": "string",
                 "type": "string",
                 "required": bool,
-                "possibleValues": []
+                "possibleValues": [],
+                "defaultValue": null,
+                "dataValue_target_AI": null
             }
-        }
+        ]
     }
     """
     # Check if mock mode is enabled
@@ -491,7 +493,8 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             session_id=session_id,
             user_request=user_request,
             documents=documents,
-            fields_dictionary=fields_dictionary,
+            form_json=form_json,  # Form JSON as-is
+            fields_dictionary=fields_dictionary,  # Deprecated: kept for backward compatibility
             remaining_steps=50
         )
         
@@ -615,6 +618,7 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         
         # Extract data from final_state with safe access
         # Use getattr for Pydantic models, .get() for dicts
+        filled_form_json = getattr(final_state, 'filled_form_json', None) or (final_state.get('filled_form_json', []) if isinstance(final_state, dict) else [])
         extracted_data = getattr(final_state, 'extracted_data', None) or (final_state.get('extracted_data', {}) if isinstance(final_state, dict) else {})
         confidence_scores = getattr(final_state, 'confidence_scores', None) or (final_state.get('confidence_scores', {}) if isinstance(final_state, dict) else {})
         quality_score = getattr(final_state, 'quality_score', None) or (final_state.get('quality_score') if isinstance(final_state, dict) else None)
@@ -735,7 +739,8 @@ async def process_mcp_request(request: Request) -> JSONResponse:
             )
             
             response_data = {
-                "extracted_data": serialize_value(extracted_data) if extracted_data else {},
+                "filled_form_json": serialize_value(filled_form_json) if filled_form_json else [],  # Same structure as input, with dataValue_target_AI filled
+                "extracted_data": serialize_value(extracted_data) if extracted_data else {},  # Deprecated: kept for backward compatibility
                 "confidence_scores": serialize_value(confidence_scores) if confidence_scores else {},
                 "quality_score": quality_score,
                 "field_mappings": serialized_field_mappings,

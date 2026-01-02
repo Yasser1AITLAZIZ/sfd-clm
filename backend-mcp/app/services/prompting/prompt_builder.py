@@ -1,6 +1,7 @@
 """Prompt builder for constructing prompts from preprocessed data"""
 from typing import Dict, Any, Optional, List
 import logging
+import json
 
 from app.core.logging import get_logger, safe_log
 from app.models.schemas import (
@@ -10,6 +11,7 @@ from app.models.schemas import (
     ContinuationPromptSchema,
     PromptResponseSchema
 )
+from app.services.preprocessing.form_json_normalizer import normalize_form_json
 from .prompt_template_engine import PromptTemplateEngine
 
 logger = get_logger(__name__)
@@ -45,7 +47,8 @@ class PromptBuilder:
         """
         try:
             record_id = preprocessed_data.record_id if preprocessed_data.record_id else "unknown"
-            
+            if record_id == "unknown":
+                raise InvalidRequestError("record_id cannot be unknown")
             safe_log(
                 logger,
                 logging.INFO,
@@ -58,10 +61,18 @@ class PromptBuilder:
                 preprocessed_data.processed_documents
             )
             
-            # Format fields section
-            fields_section = self.format_fields_section(
-                preprocessed_data.fields_dictionary
-            )
+            # Get original fields from salesforce_data
+            salesforce_data = preprocessed_data.salesforce_data if hasattr(preprocessed_data, 'salesforce_data') else None
+            if not salesforce_data:
+                fields_to_fill = []
+            else:
+                fields_to_fill = salesforce_data.fields_to_fill if hasattr(salesforce_data, 'fields_to_fill') else []
+            
+            # Normalize form JSON
+            normalized_fields = normalize_form_json(fields_to_fill)
+            
+            # Convert to JSON string
+            form_json_str = json.dumps(normalized_fields, ensure_ascii=False, indent=2)
             
             # Get instructions for record type
             instructions = self._get_instructions_for_record_type(
@@ -78,21 +89,11 @@ class PromptBuilder:
                 "documents": [
                     {
                         "name": doc.name if hasattr(doc, 'name') else "unknown",
-                        "type": doc.type if hasattr(doc, 'type') else "unknown",
-                        "quality_score": doc.quality_score if hasattr(doc, 'quality_score') else 0
+                        "type": doc.type if hasattr(doc, 'type') else "unknown"
                     }
                     for doc in preprocessed_data.processed_documents
                 ],
-                "fields": [
-                    {
-                        "label": field.label if hasattr(field, 'label') else "Unknown",
-                        "field_type": field.field_type if hasattr(field, 'field_type') else "text",
-                        "required": field.required if hasattr(field, 'required') else True,
-                        "description": field.description if hasattr(field, 'description') else "",
-                        "examples": field.examples if hasattr(field, 'examples') else []
-                    }
-                    for field in preprocessed_data.fields_dictionary.prioritized_fields
-                ],
+                "form_json": form_json_str,  # Form JSON as variable
                 "user_request": user_request,
                 "instructions": instructions
             }
@@ -113,7 +114,7 @@ class PromptBuilder:
                     "prompt_length": prompt_length,
                     "estimated_tokens": estimated_tokens,
                     "documents_count": len(preprocessed_data.processed_documents),
-                    "fields_count": len(preprocessed_data.fields_dictionary.fields)
+                    "fields_count": len(normalized_fields)
                 }
             )
             
@@ -242,8 +243,7 @@ class PromptBuilder:
             for i, doc in enumerate(documents, 1):
                 name = doc.name if hasattr(doc, 'name') else f"Document {i}"
                 doc_type = doc.type if hasattr(doc, 'type') else "unknown"
-                quality = doc.quality_score if hasattr(doc, 'quality_score') else 0
-                lines.append(f"{i}. {name} ({doc_type}) - Qualité: {quality}%")
+                lines.append(f"{i}. {name} ({doc_type})")
             
             return "\n".join(lines)
             
@@ -261,11 +261,11 @@ class PromptBuilder:
         """Format fields section for prompt"""
         try:
             if not fields_dictionary or not hasattr(fields_dictionary, 'prioritized_fields'):
-                return "Aucun champ à remplir."
+                raise InvalidRequestError("fields_dictionary cannot be None")
             
             fields = fields_dictionary.prioritized_fields
             if not fields:
-                return "Aucun champ à remplir."
+                raise InvalidRequestError("fields cannot be None")
             
             lines = ["Champs à remplir (par ordre de priorité):"]
             for i, field in enumerate(fields, 1):

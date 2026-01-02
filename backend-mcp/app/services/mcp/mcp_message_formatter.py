@@ -11,6 +11,7 @@ from app.models.schemas import (
     MCPMetadataSchema,
     ProcessedDocumentSchema
 )
+from app.services.preprocessing.form_json_normalizer import normalize_form_json
 
 logger = get_logger(__name__)
 
@@ -54,13 +55,19 @@ class MCPMessageFormatter:
                 context.get("documents", [])
             )
             
+            # Extract form_json from context (or fields as fallback)
+            form_json = context.get("form_json", context.get("fields", []))
+            
+            # Normalize form JSON
+            normalized_form_json = normalize_form_json(form_json)
+            
             # Build message
             message = MCPMessageSchema(
                 message_id=message_id,
                 prompt=prompt,
                 context={
                     "documents": serialized_documents,
-                    "fields": context.get("fields", []),
+                    "form_json": normalized_form_json,  # Form JSON as-is
                     "session_id": context.get("session_id")
                 },
                 metadata=MCPMetadataSchema(

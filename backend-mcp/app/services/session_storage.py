@@ -95,6 +95,8 @@ class SessionStorage:
         """Initialize database schema with refactored structure"""
         try:
             with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+                # Enable foreign keys for ON DELETE CASCADE to work
+                conn.execute("PRAGMA foreign_keys = ON")
                 # Check if old structure exists (has 'data' column but not 'input_data')
                 cursor = conn.execute("PRAGMA table_info(sessions)")
                 columns = [row[1] for row in cursor.fetchall()]
@@ -239,6 +241,8 @@ class SessionStorage:
         """Get SQLite connection with proper settings"""
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
+        # Enable foreign keys for ON DELETE CASCADE to work
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
     
     def _cleanup_expired_sessions(self, conn: sqlite3.Connection):

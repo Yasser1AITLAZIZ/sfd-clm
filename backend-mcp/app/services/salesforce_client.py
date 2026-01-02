@@ -10,7 +10,6 @@ from app.core.exceptions import SalesforceClientError
 from app.models.schemas import (
     SalesforceDataResponseSchema, 
     DocumentResponseSchema, 
-    FieldToFillResponseSchema,
     SalesforceFormFieldSchema,
     SalesforceFormFieldsResponseSchema
 )
@@ -232,57 +231,15 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
                     fields_count=len(form_fields_response.fields)
                 )
                 
-                # Convert each field
-                for i, field in enumerate(form_fields_response.fields, 1):
-                    try:
-                        # Log field details before conversion
-                        field_label = field.label if hasattr(field, 'label') else 'unknown'
-                        field_api_name = field.apiName if hasattr(field, 'apiName') else None
-                        
-                        safe_log(
-                            logger,
-                            logging.DEBUG,
-                            "Converting Salesforce form field",
-                            record_id=record_id,
-                            field_index=i,
-                            field_label=field_label,
-                            field_api_name=field_api_name,
-                            field_type=field.type if hasattr(field, 'type') else 'unknown'
-                        )
-                        
-                        converted_field = FieldToFillResponseSchema.from_salesforce_form_field(field)
-                        fields_to_fill.append(converted_field)
-                        
-                        safe_log(
-                            logger,
-                            logging.DEBUG,
-                            "Field converted successfully",
-                            record_id=record_id,
-                            field_index=i,
-                            converted_field_name=converted_field.field_name,
-                            converted_field_type=converted_field.field_type
-                        )
-                    except Exception as e:
-                        safe_log(
-                            logger,
-                            logging.WARNING,
-                            "Failed to convert Salesforce form field",
-                            record_id=record_id,
-                            field_index=i,
-                            field_label=field.label if hasattr(field, 'label') else 'unknown',
-                            field_api_name=field.apiName if hasattr(field, 'apiName') else None,
-                            error_type=type(e).__name__,
-                            error_message=str(e) if e else "Unknown"
-                        )
-                        continue
+                # Use fields directly (no conversion)
+                fields_to_fill = form_fields_response.fields
                 
                 safe_log(
                     logger,
                     logging.INFO,
-                    "Fields conversion completed",
+                    "Fields extracted from Salesforce",
                     record_id=record_id,
-                    original_fields_count=len(form_fields_response.fields),
-                    converted_fields_count=len(fields_to_fill)
+                    fields_count=len(fields_to_fill)
                 )
             except Exception as e:
                 safe_log(
@@ -297,23 +254,25 @@ async def fetch_salesforce_data(record_id: str) -> SalesforceDataResponseSchema:
         
         if "fields_to_fill" in data and isinstance(data["fields_to_fill"], list):
             # Old format: {"fields_to_fill": [{"field_name": "...", ...}]}
+            # Convert to SalesforceFormFieldSchema format
             safe_log(
                 logger,
                 logging.INFO,
-                "Using old Salesforce format (fields_to_fill)",
+                "Using old Salesforce format (fields_to_fill), converting to SalesforceFormFieldSchema",
                 record_id=record_id,
                 fields_count=len(data["fields_to_fill"])
             )
             for i, field in enumerate(data["fields_to_fill"], 1):
                 if not isinstance(field, dict):
                     continue
-                fields_to_fill.append(FieldToFillResponseSchema(
-                    field_name=field.get("field_name") or f"field_{i}",
-                    field_type=field.get("field_type") or "text",
-                    value=field.get("value") if field.get("value") is not None else None,
-                    required=field.get("required") if field.get("required") is not None else True,
+                # Convert old format to SalesforceFormFieldSchema
+                fields_to_fill.append(SalesforceFormFieldSchema(
                     label=field.get("label") or field.get("field_name") or f"Field {i}",
-                    metadata=field.get("metadata", {})
+                    apiName=field.get("field_name") or None,
+                    type=field.get("field_type") or "text",
+                    required=field.get("required") if field.get("required") is not None else True,
+                    possibleValues=field.get("metadata", {}).get("possibleValues", []),
+                    defaultValue=None  # Always null per requirements
                 ))
         
         salesforce_data = SalesforceDataResponseSchema(

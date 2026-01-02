@@ -1,6 +1,6 @@
 """
 Step 4: Test Prompt Building
-Tests prompt construction from preprocessed data
+Tests prompt construction from preprocessed data with form_json
 """
 
 import sys
@@ -31,13 +31,16 @@ TEST_RECORD_ID = "001XX000001"
 def load_step3_output():
     """Load step 3 output"""
     step3_output = project_root / "debug-scripts" / "step3_output.json"
-    if step3_output.exists():
-        try:
-            with open(step3_output, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.warning(f"Could not load step3 output: {e}")
-    return None
+    if not step3_output.exists():
+        raise FileNotFoundError(
+            f"Step 3 output not found: {step3_output}\n"
+            "Please run step3_test_preprocessing_pipeline.py first"
+        )
+    try:
+        with open(step3_output, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Could not load step3 output: {e}")
 
 
 async def test_prompt_building():
@@ -48,33 +51,57 @@ async def test_prompt_building():
     
     try:
         from app.services.prompting.prompt_builder import PromptBuilder
+        from app.models.schemas import PreprocessedDataSchema
         
         # Load step 3 output
         step3_data = load_step3_output()
-        if not step3_data:
-            logger.error("❌ Step 3 output not found")
-            return None
         
-        prompt_builder = PromptBuilder()
+        # Convert to PreprocessedDataSchema
+        try:
+            preprocessed_data = PreprocessedDataSchema(**step3_data)
+        except Exception as e:
+            raise ValueError(f"Could not create PreprocessedDataSchema: {e}")
         
-        # Extract data
-        record_id = step3_data.get("record_id", TEST_RECORD_ID)
-        record_type = step3_data.get("record_type", "Claim")
-        processed_documents = step3_data.get("processed_documents", [])
-        fields_dictionary = step3_data.get("fields_dictionary", {})
-        fields = fields_dictionary.get("fields", []) if isinstance(fields_dictionary, dict) else []
+        # Extract data from nested structure
+        record_id = preprocessed_data.record_id
+        record_type = preprocessed_data.record_type
+        processed_documents = preprocessed_data.processed_documents
+        salesforce_data = preprocessed_data.salesforce_data
+        fields_to_fill = salesforce_data.fields_to_fill
         
         logger.info(f"Building prompt for:")
         logger.info(f"  - Record ID: {record_id}")
         logger.info(f"  - Record Type: {record_type}")
         logger.info(f"  - Documents: {len(processed_documents)}")
-        logger.info(f"  - Fields: {len(fields)}")
+        logger.info(f"  - Fields to Fill: {len(fields_to_fill)}")
+        
+        # Verify fields structure (now with dataValue_target_AI)
+        logger.info("\n--- Fields Structure Verification ---")
+        for i, field in enumerate(fields_to_fill[:3], 1):  # Show first 3
+            logger.info(f"\n  Field {i}:")
+            # Handle both Pydantic models and dicts
+            if hasattr(field, 'model_dump'):
+                field_dict = field.model_dump()
+                logger.info(f"    - Label: {field.label}")
+                logger.info(f"    - Type: {field.type}")
+                logger.info(f"    - dataValue_target_AI: {field_dict.get('dataValue_target_AI', 'N/A')}")
+                logger.info(f"    - defaultValue: {field_dict.get('defaultValue', 'N/A')}")
+            elif isinstance(field, dict):
+                logger.info(f"    - Label: {field.get('label', 'N/A')}")
+                logger.info(f"    - Type: {field.get('type', 'N/A')}")
+                logger.info(f"    - dataValue_target_AI: {field.get('dataValue_target_AI', 'N/A')}")
+                logger.info(f"    - defaultValue: {field.get('defaultValue', 'N/A')}")
+            else:
+                logger.info(f"    - Field object: {type(field).__name__}")
+        
+        prompt_builder = PromptBuilder()
         
         # Build prompt using the correct method signature
+        # Use build_prompt (wrapper method used by workflow orchestrator)
         user_message = "Remplis tous les champs manquants"
         prompt_result = await prompt_builder.build_prompt(
             user_message=user_message,
-            preprocessed_data=step3_data,  # Pass the full preprocessed_data dict
+            preprocessed_data=preprocessed_data,
             routing_status="initialization"
         )
         
@@ -87,9 +114,20 @@ async def test_prompt_building():
             prompt = getattr(prompt_result, 'prompt', str(prompt_result))
             scenario_type = getattr(prompt_result, 'scenario_type', "initialization")
         
-        logger.info("✅ Prompt built successfully")
+        logger.info("\n✅ Prompt built successfully")
         logger.info(f"  - Prompt length: {len(prompt)} characters")
         logger.info(f"  - Estimated tokens: ~{len(prompt) // 4}")
+        logger.info(f"  - Scenario type: {scenario_type}")
+        
+        # Check if form_json is embedded in prompt
+        if "form_json" in prompt.lower() or '"dataValue_target_AI"' in prompt:
+            logger.info("  ✅ form_json appears to be embedded in prompt")
+        else:
+            logger.warning("  ⚠️  form_json might not be embedded in prompt")
+        
+        # Show a snippet of the prompt
+        logger.info("\n--- Prompt Snippet (first 500 chars) ---")
+        logger.info(prompt[:500] + "..." if len(prompt) > 500 else prompt)
         
         # Save output
         output_data = {
@@ -98,10 +136,10 @@ async def test_prompt_building():
             "metadata": {
                 "record_id": record_id,
                 "record_type": record_type,
-                "prompt_length": len(prompt),
-                "estimated_tokens": len(prompt) // 4,
                 "documents_count": len(processed_documents),
-                "fields_count": len(fields)
+                "fields_count": len(fields_to_fill),
+                "prompt_length": len(prompt),
+                "estimated_tokens": len(prompt) // 4
             }
         }
         
@@ -110,11 +148,11 @@ async def test_prompt_building():
             json.dump(output_data, f, indent=2, default=str, ensure_ascii=False)
         logger.info(f"\n✅ Output saved to: {output_file}")
         
-        return prompt
+        return prompt_result
         
     except Exception as e:
         logger.error(f"❌ ERROR in prompt building test: {type(e).__name__}: {str(e)}", exc_info=True)
-        return None
+        raise
 
 
 async def main():
@@ -125,17 +163,17 @@ async def main():
     logger.info(f"Test Record ID: {TEST_RECORD_ID}")
     logger.info("")
     
-    prompt = await test_prompt_building()
-    
-    logger.info("\n" + "=" * 80)
-    logger.info("STEP 4 SUMMARY")
-    logger.info("=" * 80)
-    
-    if prompt:
+    try:
+        prompt_result = await test_prompt_building()
+        
+        logger.info("\n" + "=" * 80)
+        logger.info("STEP 4 SUMMARY")
+        logger.info("=" * 80)
         logger.info("✅ Prompt building: PASSED")
-        logger.info(f"  - Prompt length: {len(prompt)} characters")
-    else:
-        logger.error("❌ Prompt building: FAILED")
+        
+    except Exception as e:
+        logger.error(f"❌ STEP 4 FAILED: {type(e).__name__}: {str(e)}")
+        raise
     
     logger.info("\n" + "=" * 80)
     logger.info("STEP 4 COMPLETE - Check step4_output.log and step4_output.json for details")
@@ -144,4 +182,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

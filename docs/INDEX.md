@@ -36,6 +36,7 @@ Exemples pratiques, scripts de test, scénarios complets.
 ### Architecture & Flux
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Architecture système
 - **[PIPELINE_FLOW.md](PIPELINE_FLOW.md)** - Flux détaillés avec diagrammes
+- **[INPUT_OUTPUT_FORMATS.md](INPUT_OUTPUT_FORMATS.md)** - Formats de données input/output complets
 
 ### Installation & Configuration
 - **[INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)** - Installation complète
@@ -84,6 +85,7 @@ Exemples pratiques, scripts de test, scénarios complets.
 → [API_REFERENCE.md](API_REFERENCE.md#codes-derreur)
 
 ### Formats de Données
+→ [INPUT_OUTPUT_FORMATS.md](INPUT_OUTPUT_FORMATS.md) - Documentation complète des formats
 → [API_REFERENCE.md](API_REFERENCE.md#formats-de-données)
 
 ### Données Mock Disponibles
@@ -113,7 +115,8 @@ docs/
 ├── README.md                    ← Vue d'ensemble de la documentation
 ├── API_REFERENCE.md             ← Référence complète des APIs ⭐
 ├── PIPELINE_FLOW.md             ← Flux détaillés avec diagrammes ⭐
-├── ARCHITECTURE.md              ← Architecture système
+├── ARCHITECTURE.md              ← Architecture système (Form JSON As-Is)
+├── INPUT_OUTPUT_FORMATS.md      ← Formats de données input/output ⭐
 ├── INSTALLATION_GUIDE.md        ← Guide d'installation
 ├── PIPELINE_DOCUMENTATION.md   ← Documentation historique
 └── TEST_EXAMPLES.md             ← Exemples de tests
@@ -121,13 +124,16 @@ docs/
 
 ## ✅ Documentation à Jour
 
-Toute la documentation a été révisée et mise à jour pour refléter l'état actuel du projet :
+Toute la documentation a été révisée et mise à jour pour refléter l'architecture **Form JSON As-Is** :
 
+- ✅ Architecture simplifiée : Form JSON envoyé tel quel (as-is)
+- ✅ Structure nested : `preprocessed_data.salesforce_data.fields_to_fill`
+- ✅ Normalisation minimale : `dataValue_target_AI: null`, `defaultValue: null`
+- ✅ Golden Rule : `"non disponible"` si information non trouvée
 - ✅ Toutes les APIs sont documentées avec input/output complets
 - ✅ Tous les diagrammes de flux sont à jour
-- ✅ L'état d'avancement reflète la réalité (tous les services sont implémentés)
+- ✅ Formats de données documentés dans INPUT_OUTPUT_FORMATS.md
 - ✅ Les exemples de code sont fonctionnels
-- ✅ Les formats de données correspondent au code actuel
 
 ## 🔗 Liens Utiles
 

@@ -1,5 +1,33 @@
 # Documentation Complète - Pipeline OptiClaims
 
+## Architecture Actuelle : Form JSON As-Is
+
+> **⚠️ IMPORTANT** : Le projet utilise maintenant une architecture simplifiée **Form JSON As-Is** où les champs du formulaire sont envoyés **tels quels** à travers le pipeline.
+
+### Principes Clés
+
+1. **Form JSON As-Is** : Les champs sont envoyés tels quels, sans transformation complexe
+2. **Normalisation Minimale** : Seule normalisation : ajout de `dataValue_target_AI: null` et `defaultValue: null`
+3. **Structure Nested** : `PreprocessedDataSchema.salesforce_data.fields_to_fill` contient les champs normalisés
+4. **Golden Rule** : Si information non trouvée dans OCR → `"non disponible"` (jamais `null`)
+5. **Même Structure Input/Output** : Le format de sortie (`filled_form_json`) a la même structure que l'input
+
+### Composants Supprimés
+
+- ❌ `fields_preprocessor.py` - Supprimé
+- ❌ `EnrichedFieldSchema` - Supprimé
+- ❌ `FieldsDictionarySchema` - Supprimé
+- ❌ `FieldToFillResponseSchema` - Supprimé
+- ❌ `quality_score` dans documents - Supprimé
+- ❌ `validate_document_quality()` - Supprimé
+
+### Documentation Complète
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Architecture complète avec Form JSON As-Is
+- **[PIPELINE_FLOW.md](PIPELINE_FLOW.md)** - Flux détaillés avec diagrammes
+- **[INPUT_OUTPUT_FORMATS.md](INPUT_OUTPUT_FORMATS.md)** - Formats de données complets
+- **[API_REFERENCE.md](API_REFERENCE.md)** - Spécifications API complètes
+
 ## État d'Avancement du Projet
 
 > **Note** : Pour les spécifications API complètes, consultez [API_REFERENCE.md](API_REFERENCE.md)  
@@ -138,32 +166,28 @@ flowchart TD
     ],
     "fields_to_fill": [
       {
-        "field_name": "montant_total",
-        "field_type": "currency",
-        "value": null,
+        "label": "Evènement déclencheur de sinistre",
+        "apiName": null,
+        "type": "picklist",
         "required": true,
-        "label": "Montant total"
+        "possibleValues": ["Accident", "Assistance", "Bris de glace"],
+        "defaultValue": "Accident"
       },
       {
-        "field_name": "date_facture",
-        "field_type": "date",
-        "value": null,
+        "label": "Montant total",
+        "apiName": null,
+        "type": "currency",
         "required": true,
-        "label": "Date de facture"
+        "possibleValues": [],
+        "defaultValue": null
       },
       {
-        "field_name": "numero_facture",
-        "field_type": "text",
-        "value": null,
+        "label": "Date de facture",
+        "apiName": null,
+        "type": "date",
         "required": true,
-        "label": "Numéro de facture"
-      },
-      {
-        "field_name": "beneficiaire_nom",
-        "field_type": "text",
-        "value": null,
-        "required": true,
-        "label": "Nom du bénéficiaire"
+        "possibleValues": [],
+        "defaultValue": null
       }
     ]
   }

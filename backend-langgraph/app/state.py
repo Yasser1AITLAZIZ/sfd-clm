@@ -89,9 +89,11 @@ class MCPAgentState(BaseModel):
     text_blocks: List[TextBlock] = Field(default_factory=list)
 
     # Mapping et extraction
-    fields_dictionary: Dict[str, Any] = Field(default_factory=dict)
+    form_json: List[Dict[str, Any]] = Field(default_factory=list)  # Form JSON as-is from input
+    filled_form_json: Optional[List[Dict[str, Any]]] = None  # Form JSON with dataValue_target_AI filled
+    fields_dictionary: Dict[str, Any] = Field(default_factory=dict)  # Deprecated: kept for compatibility
     field_mappings: Dict[str, Any] = Field(default_factory=dict)  # {field_name: mapping_dict} where mapping_dict can be str or Dict with 'value', 'confidence', 'source', 'justification'
-    extracted_data: Dict[str, Any] = Field(default_factory=dict)
+    extracted_data: Dict[str, Any] = Field(default_factory=dict)  # Deprecated: kept for backward compatibility
     confidence_scores: Dict[str, float] = Field(default_factory=dict)
 
     # Validation

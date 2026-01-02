@@ -60,6 +60,7 @@ class SalesforceFormFieldSchema(BaseModel):
     required: bool
     possibleValues: List[str] = Field(default_factory=list)
     defaultValue: Optional[Any] = None
+    dataValue_target_AI: Optional[Any] = None  # Field for AI-extracted value (normalized to null initially)
 
 
 class SalesforceFormFieldsResponseSchema(BaseModel):
@@ -67,59 +68,12 @@ class SalesforceFormFieldsResponseSchema(BaseModel):
     fields: List[SalesforceFormFieldSchema]
 
 
-class FieldToFillResponseSchema(BaseModel):
-    """Field to fill response schema"""
-    field_name: str
-    field_type: str
-    value: Optional[str]
-    required: bool
-    label: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)  # Store possibleValues, etc.
-
-    @classmethod
-    def from_salesforce_form_field(cls, field: SalesforceFormFieldSchema) -> "FieldToFillResponseSchema":
-        """Convert SalesforceFormFieldSchema to FieldToFillResponseSchema"""
-        import re
-        
-        # Generate field_name from apiName or slugify label
-        if field.apiName:
-            field_name = field.apiName
-        else:
-            # Slugify label: lowercase, replace spaces with underscores, remove special chars
-            field_name = re.sub(r'[^a-zA-Z0-9_]', '_', field.label.lower().strip())
-            field_name = re.sub(r'_+', '_', field_name).strip('_')
-            if not field_name:
-                field_name = "field_" + str(hash(field.label))[:8]
-        
-        # Normalize field_type: picklist/radio -> text (with possibleValues in metadata)
-        field_type = field.type
-        if field.type in ("picklist", "radio"):
-            field_type = "text"
-        
-        # Build metadata
-        metadata = {}
-        if field.possibleValues:
-            metadata["possibleValues"] = field.possibleValues
-        if field.defaultValue is not None:
-            metadata["defaultValue"] = field.defaultValue
-        metadata["original_type"] = field.type
-        
-        return cls(
-            field_name=field_name,
-            field_type=field_type,
-            value=str(field.defaultValue) if field.defaultValue is not None else None,
-            required=field.required,
-            label=field.label,
-            metadata=metadata
-        )
-
-
 class SalesforceDataResponseSchema(BaseModel):
     """Salesforce data response schema"""
     record_id: str
     record_type: str
     documents: List[DocumentResponseSchema]
-    fields_to_fill: List[FieldToFillResponseSchema]
+    fields_to_fill: List[SalesforceFormFieldSchema]  # Use original schema directly
 
 
 class InitializationResponseSchema(BaseModel):
@@ -304,30 +258,9 @@ class ProcessedDocumentSchema(BaseModel):
     type: str
     indexed: bool
     metadata: DocumentMetadataSchema
-    quality_score: float  # 0-100
     processed: bool = True
 
 
-class EnrichedFieldSchema(BaseModel):
-    """Schema for enriched field"""
-    field_name: str
-    field_type: str
-    value: Optional[str]
-    required: bool
-    label: str
-    description: str = ""
-    expected_format: str = ""
-    examples: List[str] = Field(default_factory=list)
-    validation_rules: Dict[str, Any] = Field(default_factory=dict)
-    business_context: str = ""
-
-
-class FieldsDictionarySchema(BaseModel):
-    """Schema for fields dictionary"""
-    fields: List[EnrichedFieldSchema]
-    empty_fields: List[EnrichedFieldSchema] = Field(default_factory=list)
-    prefilled_fields: List[EnrichedFieldSchema] = Field(default_factory=list)
-    prioritized_fields: List[EnrichedFieldSchema] = Field(default_factory=list)
 
 
 class ContextSummarySchema(BaseModel):
@@ -344,7 +277,7 @@ class PreprocessedDataSchema(BaseModel):
     record_id: str
     record_type: str
     processed_documents: List[ProcessedDocumentSchema] = Field(default_factory=list)
-    fields_dictionary: FieldsDictionarySchema
+    salesforce_data: SalesforceDataResponseSchema  # Keep original salesforce data with fields_to_fill
     context_summary: ContextSummarySchema
     validation_results: Dict[str, Any] = Field(default_factory=dict)
     metrics: Dict[str, Any] = Field(default_factory=dict)
@@ -412,7 +345,8 @@ class MCPMessageSchema(BaseModel):
 class MCPResponseSchema(BaseModel):
     """Schema for MCP response"""
     message_id: str
-    extracted_data: Dict[str, Any] = Field(default_factory=dict)
+    filled_form_json: Optional[List[Dict[str, Any]]] = None  # Same structure as input with dataValue_target_AI filled
+    extracted_data: Dict[str, Any] = Field(default_factory=dict)  # Deprecated: kept for backward compatibility
     confidence_scores: Dict[str, float] = Field(default_factory=dict)
     status: Literal["success", "error", "partial"] = "success"
     error: Optional[str] = None
@@ -420,7 +354,8 @@ class MCPResponseSchema(BaseModel):
 
 class LanggraphResponseSchema(BaseModel):
     """Schema for Langgraph response"""
-    extracted_data: Dict[str, Any] = Field(default_factory=dict)
+    filled_form_json: Optional[List[Dict[str, Any]]] = None  # Same structure as input with dataValue_target_AI filled
+    extracted_data: Dict[str, Any] = Field(default_factory=dict)  # Deprecated: kept for backward compatibility
     confidence_scores: Dict[str, float] = Field(default_factory=dict)
     quality_score: Optional[float] = None
     processing_time: Optional[float] = None

@@ -68,6 +68,8 @@ class WorkflowStepStorage:
         """Initialize database schema for workflow_steps table"""
         try:
             with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+                # Enable foreign keys for ON DELETE CASCADE to work
+                conn.execute("PRAGMA foreign_keys = ON")
                 # Create workflow_steps table if it doesn't exist
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS workflow_steps (
@@ -136,6 +138,8 @@ class WorkflowStepStorage:
         """Get SQLite connection with proper settings"""
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
+        # Enable foreign keys for ON DELETE CASCADE to work
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
     
     def create_workflow_step(
@@ -193,7 +197,11 @@ class WorkflowStepStorage:
                     input_documents_count = len(docs) if isinstance(docs, list) else None
                 
                 # Extract fields count
-                if "fields" in input_data:
+                # Check form_json first (new architecture), then fields_dictionary (legacy), then other formats
+                if "form_json" in input_data:
+                    form_json = input_data["form_json"]
+                    input_fields_count = len(form_json) if isinstance(form_json, list) else None
+                elif "fields" in input_data:
                     fields = input_data["fields"]
                     input_fields_count = len(fields) if isinstance(fields, (list, dict)) else None
                 elif "fields_dictionary" in input_data:

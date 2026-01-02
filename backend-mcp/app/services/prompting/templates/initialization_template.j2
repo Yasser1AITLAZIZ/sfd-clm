@@ -4,17 +4,11 @@ Objectif: {{ objective }}
 
 # Documents disponibles
 {% for doc in documents %}
-- {{ doc.name }} ({{ doc.type }}) - Qualité: {{ doc.quality_score }}%
+- {{ doc.name }} ({{ doc.type }})
 {% endfor %}
 
-# Champs à remplir
-{% for field in fields %}
-- {{ field.label }} ({{ field.field_type }}) - Requis: {{ field.required }}
-  Description: {{ field.description }}
-  {% if field.examples %}
-  Exemples: {{ field.examples | join(", ") }}
-  {% endif %}
-{% endfor %}
+# Form Fields (JSON)
+{{ form_json }}
 
 # Requête utilisateur
 {{ user_request }}

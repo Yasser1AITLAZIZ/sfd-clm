@@ -50,14 +50,11 @@ async def startup_event():
         # Verify critical methods exist at startup
         from app.services.workflow_orchestrator import WorkflowOrchestrator
         from app.services.prompting.prompt_builder import PromptBuilder
-        from app.services.prompting.prompt_optimizer import PromptOptimizer
         
         # Create test instances to verify methods
         test_pb = PromptBuilder()
-        test_po = PromptOptimizer()
         
         has_build_prompt = hasattr(test_pb, 'build_prompt')
-        has_optimize_prompt = hasattr(test_po, 'optimize_prompt')
         
         # Initialize SessionStorage at startup to create database if it doesn't exist
         try:
@@ -86,8 +83,7 @@ async def startup_event():
             debug=settings.debug,
             log_level=settings.log_level,
             mock_salesforce_url=settings.mock_salesforce_url,
-            has_build_prompt=has_build_prompt,
-            has_optimize_prompt=has_optimize_prompt
+            has_build_prompt=has_build_prompt
         )
         
         if not has_build_prompt:
@@ -96,13 +92,6 @@ async def startup_event():
                 logging.ERROR,
                 "CRITICAL: build_prompt method not found at startup!",
                 available_methods=str([m for m in dir(test_pb) if not m.startswith('_')])
-            )
-        if not has_optimize_prompt:
-            safe_log(
-                logger,
-                logging.ERROR,
-                "CRITICAL: optimize_prompt method not found at startup!",
-                available_methods=str([m for m in dir(test_po) if not m.startswith('_')])
             )
     except Exception as e:
         print(f"Error in startup logging: {e}")
