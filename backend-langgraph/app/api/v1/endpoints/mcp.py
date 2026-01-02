@@ -306,6 +306,7 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         user_request = body.get("user_request", "")
         documents_data = body.get("documents", [])
         fields_dictionary = body.get("fields_dictionary", {})
+        form_json = body.get("form_json", [])  # Extract form_json from request body
         
         # Validate required fields
         if not record_id or not record_id.strip():
