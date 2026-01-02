@@ -303,19 +303,45 @@ def safe_log(
             extra["traceback"] = traceback
         
         # Add kwargs with safe defaults (don't override location info if explicitly provided)
+        # Avoid conflicts with LogRecord built-in attributes (like 'filename', 'funcName', 'lineno', etc.)
+        reserved_attributes = {
+            'filename', 'funcName', 'lineno', 'pathname', 'module', 'name',
+            'levelname', 'levelno', 'message', 'msg', 'args', 'exc_info',
+            'exc_text', 'stack_info', 'created', 'msecs', 'relativeCreated',
+            'thread', 'threadName', 'processName', 'process', 'getMessage'
+        }
+        
         for key, value in kwargs.items():
-            if value is None:
-                extra[key] = "none"
-            elif isinstance(value, str):
-                extra[key] = value
-            elif isinstance(value, (int, float, bool)):
-                extra[key] = value
+            # Skip reserved attributes to avoid "Attempt to overwrite" errors
+            if key in reserved_attributes:
+                # Prefix with 'extra_' to avoid conflicts
+                safe_key = f"extra_{key}"
+                if safe_key not in extra:
+                    if value is None:
+                        extra[safe_key] = "none"
+                    elif isinstance(value, str):
+                        extra[safe_key] = value
+                    elif isinstance(value, (int, float, bool)):
+                        extra[safe_key] = value
+                    else:
+                        try:
+                            extra[safe_key] = str(value)
+                        except Exception:
+                            extra[safe_key] = "unserializable"
             else:
-                # Convert to string for safety
-                try:
-                    extra[key] = str(value)
-                except Exception:
-                    extra[key] = "unserializable"
+                # Safe to add directly
+                if value is None:
+                    extra[key] = "none"
+                elif isinstance(value, str):
+                    extra[key] = value
+                elif isinstance(value, (int, float, bool)):
+                    extra[key] = value
+                else:
+                    # Convert to string for safety
+                    try:
+                        extra[key] = str(value)
+                    except Exception:
+                        extra[key] = "unserializable"
         
         logger.log(level, message, extra=extra)
     except Exception as e:

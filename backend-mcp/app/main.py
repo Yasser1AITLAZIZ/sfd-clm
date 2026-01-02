@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
@@ -12,7 +13,7 @@ from app.middleware.error_handler import (
     validation_exception_handler,
     http_exception_handler
 )
-from app.api.v1.endpoints import salesforce, tasks
+from app.api.v1.endpoints import salesforce, tasks, workflow, documents
 
 import logging
 import sqlite3
@@ -46,6 +47,15 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 # Include routers
 app.include_router(salesforce.router, tags=["MCP Salesforce"])
 app.include_router(tasks.router, tags=["Tasks"])
+app.include_router(workflow.router, tags=["Workflow"])
+app.include_router(documents.router, tags=["Documents"])
+
+# Mount static files for document uploads
+from pathlib import Path
+from app.core.config import settings
+uploads_dir = Path(settings.uploads_dir if hasattr(settings, 'uploads_dir') else 'uploads')
+uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 
 @app.on_event("startup")

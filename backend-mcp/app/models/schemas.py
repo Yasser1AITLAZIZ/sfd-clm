@@ -141,7 +141,8 @@ class SessionInputDataSchema(BaseModel):
 
 class LanggraphResponseDataSchema(BaseModel):
     """Schema for langgraph response data (complete response from langgraph)"""
-    extracted_data: Dict[str, Any] = Field(default_factory=dict)
+    filled_form_json: Optional[List[Dict[str, Any]]] = None  # Primary format with all fields filled (same structure as input)
+    extracted_data: Dict[str, Any] = Field(default_factory=dict)  # Deprecated: kept for backward compatibility
     confidence_scores: Dict[str, float] = Field(default_factory=dict)
     quality_score: Optional[float] = None
     field_mappings: Dict[str, str] = Field(default_factory=dict)
@@ -348,6 +349,7 @@ class MCPResponseSchema(BaseModel):
     filled_form_json: Optional[List[Dict[str, Any]]] = None  # Same structure as input with dataValue_target_AI filled
     extracted_data: Dict[str, Any] = Field(default_factory=dict)  # Deprecated: kept for backward compatibility
     confidence_scores: Dict[str, float] = Field(default_factory=dict)
+    quality_score: Optional[float] = None  # Overall quality score from LangGraph
     status: Literal["success", "error", "partial"] = "success"
     error: Optional[str] = None
 

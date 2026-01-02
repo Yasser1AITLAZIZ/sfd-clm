@@ -189,16 +189,26 @@ class WorkflowStepStorage:
             
             if input_data:
                 # Extract documents count
-                if "documents" in input_data:
+                if "documents_count" in input_data:
+                    # Use explicit count if provided
+                    input_documents_count = input_data["documents_count"]
+                elif "documents" in input_data:
                     docs = input_data["documents"]
                     input_documents_count = len(docs) if isinstance(docs, (list, dict)) else None
-                elif "salesforce_data" in input_data and "documents" in input_data["salesforce_data"]:
-                    docs = input_data["salesforce_data"]["documents"]
-                    input_documents_count = len(docs) if isinstance(docs, list) else None
+                elif "salesforce_data" in input_data:
+                    salesforce_data = input_data["salesforce_data"]
+                    if isinstance(salesforce_data, dict) and "documents" in salesforce_data:
+                        docs = salesforce_data["documents"]
+                        input_documents_count = len(docs) if isinstance(docs, list) else None
+                    elif hasattr(salesforce_data, 'documents'):
+                        docs = salesforce_data.documents
+                        input_documents_count = len(docs) if isinstance(docs, list) else None
                 
-                # Extract fields count
-                # Check form_json first (new architecture), then fields_dictionary (legacy), then other formats
-                if "form_json" in input_data:
+                # Extract fields count - prioritize explicit count, then calculate from data
+                if "fields_count" in input_data:
+                    # Use explicit count if provided
+                    input_fields_count = input_data["fields_count"]
+                elif "form_json" in input_data:
                     form_json = input_data["form_json"]
                     input_fields_count = len(form_json) if isinstance(form_json, list) else None
                 elif "fields" in input_data:
@@ -207,9 +217,22 @@ class WorkflowStepStorage:
                 elif "fields_dictionary" in input_data:
                     fields = input_data["fields_dictionary"]
                     input_fields_count = len(fields) if isinstance(fields, dict) else None
-                elif "salesforce_data" in input_data and "fields" in input_data["salesforce_data"]:
-                    fields = input_data["salesforce_data"]["fields"]
-                    input_fields_count = len(fields) if isinstance(fields, list) else None
+                elif "salesforce_data" in input_data:
+                    salesforce_data = input_data["salesforce_data"]
+                    if isinstance(salesforce_data, dict):
+                        # Try fields_to_fill first, then fields
+                        if "fields_to_fill" in salesforce_data:
+                            fields = salesforce_data["fields_to_fill"]
+                            input_fields_count = len(fields) if isinstance(fields, list) else None
+                        elif "fields" in salesforce_data:
+                            fields = salesforce_data["fields"]
+                            input_fields_count = len(fields) if isinstance(fields, list) else None
+                    elif hasattr(salesforce_data, 'fields_to_fill'):
+                        fields = salesforce_data.fields_to_fill
+                        input_fields_count = len(fields) if isinstance(fields, list) else None
+                    elif hasattr(salesforce_data, 'fields'):
+                        fields = salesforce_data.fields
+                        input_fields_count = len(fields) if isinstance(fields, list) else None
                 
                 # Extract prompt
                 input_prompt = input_data.get("prompt")
@@ -217,6 +240,15 @@ class WorkflowStepStorage:
                 # Extract context (as JSON string)
                 if "context" in input_data:
                     input_context = json.dumps(input_data["context"]) if input_data["context"] else None
+                
+                # Store salesforce_data as JSON string if present
+                if "salesforce_data" in input_data:
+                    salesforce_data = input_data["salesforce_data"]
+                    # Convert to dict if it's a Pydantic model
+                    if hasattr(salesforce_data, 'model_dump'):
+                        salesforce_data = salesforce_data.model_dump()
+                    # Store as JSON string in a separate field (we'll need to add this column)
+                    # For now, we'll include it in input_context or create a new field
             
             # Store in SQLite
             now = datetime.utcnow().isoformat()
@@ -253,30 +285,40 @@ class WorkflowStepStorage:
                         # Try to create the table
                         self._init_database()
                     
-                    conn.execute("""
-                        INSERT INTO workflow_steps (
-                            step_id, session_id, workflow_id, step_name, step_order, status,
-                            input_record_id, input_user_message, input_documents_count, 
-                            input_fields_count, input_prompt, input_context,
-                            started_at
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        step_id,
-                        session_id,
-                        workflow_id,
-                        step_name,
-                        step_order,
-                        "pending",
-                        input_record_id,
-                        input_user_message,
-                        input_documents_count,
-                        input_fields_count,
-                        input_prompt,
-                        input_context,
-                        now
-                    ))
-                    conn.commit()
+                    # Disable FOREIGN KEY constraint temporarily if session_id starts with "workflow-"
+                    # This allows creating steps before the session is created
+                    if session_id.startswith("workflow-"):
+                        conn.execute("PRAGMA foreign_keys = OFF")
+                    
+                    try:
+                        conn.execute("""
+                            INSERT INTO workflow_steps (
+                                step_id, session_id, workflow_id, step_name, step_order, status,
+                                input_record_id, input_user_message, input_documents_count, 
+                                input_fields_count, input_prompt, input_context,
+                                started_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            step_id,
+                            session_id,
+                            workflow_id,
+                            step_name,
+                            step_order,
+                            "pending",
+                            input_record_id,
+                            input_user_message,
+                            input_documents_count,
+                            input_fields_count,
+                            input_prompt,
+                            input_context,
+                            now
+                        ))
+                        conn.commit()
+                    finally:
+                        # Re-enable FOREIGN KEY constraint
+                        if session_id.startswith("workflow-"):
+                            conn.execute("PRAGMA foreign_keys = ON")
                     
                     safe_log(
                         logger,

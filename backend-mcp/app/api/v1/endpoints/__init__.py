@@ -1,5 +1,5 @@
 """API endpoints"""
-from . import salesforce, tasks
+from . import salesforce, tasks, workflow, documents
 
-__all__ = ["salesforce", "tasks"]
+__all__ = ["salesforce", "tasks", "workflow", "documents"]
 

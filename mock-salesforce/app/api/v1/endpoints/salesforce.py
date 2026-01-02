@@ -1,5 +1,5 @@
 """Salesforce mock endpoints"""
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import logging
@@ -218,3 +218,164 @@ async def get_record_data(request: GetRecordDataRequest) -> JSONResponse:
             }
         )
 
+
+@router.post(
+    "/mock/salesforce/add-document",
+    status_code=status.HTTP_200_OK,
+    summary="Add document to record",
+    description="Add a document to a record by copying it to test-data/documents/"
+)
+async def add_document_to_record(request_obj: Request) -> JSONResponse:
+    """
+    Add a document to a record by downloading it from URL and saving to test-data/documents/.
+    
+    Request body:
+        record_id: Salesforce record ID
+        document_url: URL of the document to download
+        document_name: Name of the document (will be prefixed with record_id)
+        document_type: MIME type of the document (optional, defaults to application/pdf)
+        
+    Returns:
+        JSON response with success status
+    """
+    try:
+        import httpx
+        from pathlib import Path
+        from app.data.file_loader import get_test_data_base_path
+        
+        # Parse request body
+        request_data = await request_obj.json()
+        
+        # Extract parameters from request body
+        record_id = request_data.get("record_id")
+        document_url = request_data.get("document_url")
+        document_name = request_data.get("document_name")
+        document_type = request_data.get("document_type", "application/pdf")
+        
+        # Validate record_id
+        if not record_id or not record_id.strip():
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_RECORD_ID",
+                        "message": "record_id cannot be empty",
+                        "details": None
+                    }
+                }
+            )
+        
+        record_id = record_id.strip()
+        
+        # Validate document_url and document_name
+        if not document_url or not document_url.strip():
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_DOCUMENT_URL",
+                        "message": "document_url cannot be empty",
+                        "details": None
+                    }
+                }
+            )
+        
+        if not document_name or not document_name.strip():
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_DOCUMENT_NAME",
+                        "message": "document_name cannot be empty",
+                        "details": None
+                    }
+                }
+            )
+        
+        document_url = document_url.strip()
+        document_name = document_name.strip()
+        
+        # Get test-data base path
+        test_data_base = get_test_data_base_path()
+        documents_dir = test_data_base / "documents"
+        documents_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create filename with format: {record_id}_{document_name}
+        # Clean document name (remove extension if present, we'll add it back)
+        import re
+        from pathlib import Path as PathLib
+        doc_path = PathLib(document_name)
+        clean_name = doc_path.stem  # Get name without extension
+        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_name)
+        extension = doc_path.suffix  # Get extension
+        if not extension:
+            # Determine extension from document_type
+            if 'pdf' in document_type.lower():
+                extension = '.pdf'
+            elif 'jpeg' in document_type.lower() or 'jpg' in document_type.lower():
+                extension = '.jpg'
+            elif 'png' in document_type.lower():
+                extension = '.png'
+            else:
+                extension = '.pdf'  # Default
+        
+        filename = f"{record_id}_{clean_name}{extension}"
+        
+        # Download document from URL
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(document_url)
+            response.raise_for_status()
+            file_content = response.content
+        
+        # Save to test-data/documents/
+        file_path = documents_dir / filename
+        with open(file_path, 'wb') as f:
+            f.write(file_content)
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Document added to record",
+            record_id=record_id,
+            filename=filename,
+            document_url=document_url,
+            file_size=len(file_content)
+        )
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "success",
+                "data": {
+                    "record_id": record_id,
+                    "filename": filename,
+                    "file_path": str(file_path),
+                    "size": len(file_content),
+                    "document_type": document_type
+                }
+            }
+        )
+        
+    except Exception as e:
+        safe_log(
+            logger,
+            logging.ERROR,
+            "Error adding document to record",
+            record_id=record_id if 'record_id' in locals() else "unknown",
+            error_type=type(e).__name__,
+            error_message=str(e) if e else "Unknown error"
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "status": "error",
+                "error": {
+                    "code": "ADD_DOCUMENT_ERROR",
+                    "message": "Failed to add document to record",
+                    "details": str(e) if e else None
+                }
+            }
+        )

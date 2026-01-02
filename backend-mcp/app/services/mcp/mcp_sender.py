@@ -285,11 +285,68 @@ class MCPSender:
             pages = []
             if doc_url:
                 try:
-                    # Download document
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        doc_response = await client.get(doc_url)
-                        doc_response.raise_for_status()
-                        doc_content = doc_response.content
+                    # Validate URL format before attempting download
+                    if not doc_url or not isinstance(doc_url, str) or not doc_url.strip():
+                        safe_log(
+                            logger,
+                            logging.WARNING,
+                            "Invalid document URL, skipping",
+                            document_id=doc_id,
+                            document_url=doc_url or "empty"
+                        )
+                        continue
+                    
+                    # Normalize URL (handle relative paths and Docker service names)
+                    normalized_url = doc_url.strip()
+                    # If URL starts with /uploads/, it might be a relative path
+                    # In Docker, we need to use the service name
+                    if normalized_url.startswith("/uploads/"):
+                        # Try to construct full URL using backend-mcp service
+                        base_url = settings.langgraph_url.replace(":8002", ":8000") if ":8002" in settings.langgraph_url else "http://backend-mcp:8000"
+                        normalized_url = f"{base_url}{normalized_url}"
+                    elif normalized_url.startswith("http://localhost") or normalized_url.startswith("http://127.0.0.1"):
+                        # Replace localhost with service name in Docker
+                        normalized_url = normalized_url.replace("http://localhost:8000", "http://backend-mcp:8000")
+                        normalized_url = normalized_url.replace("http://127.0.0.1:8000", "http://backend-mcp:8000")
+                    
+                    # Download document with improved error handling
+                    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                        try:
+                            doc_response = await client.get(normalized_url)
+                            doc_response.raise_for_status()
+                            doc_content = doc_response.content
+                        except httpx.TimeoutException:
+                            safe_log(
+                                logger,
+                                logging.WARNING,
+                                "Document download timeout, skipping",
+                                document_id=doc_id,
+                                document_url=normalized_url,
+                                timeout_seconds=30.0
+                            )
+                            continue
+                        except httpx.HTTPStatusError as http_err:
+                            safe_log(
+                                logger,
+                                logging.WARNING,
+                                "Document download HTTP error, skipping",
+                                document_id=doc_id,
+                                document_url=normalized_url,
+                                status_code=http_err.response.status_code,
+                                error_message=str(http_err)
+                            )
+                            continue
+                        except httpx.RequestError as req_err:
+                            safe_log(
+                                logger,
+                                logging.WARNING,
+                                "Document download request error, skipping",
+                                document_id=doc_id,
+                                document_url=normalized_url,
+                                error_type=type(req_err).__name__,
+                                error_message=str(req_err)
+                            )
+                            continue
                     
                     # Validate document size (50MB limit)
                     max_size = 50 * 1024 * 1024  # 50MB
@@ -578,6 +635,7 @@ class MCPSender:
                 filled_form_json=filled_form_json,  # Same structure as input
                 extracted_data=extracted_data,  # Deprecated: kept for backward compatibility
                 confidence_scores=confidence_scores,
+                quality_score=quality_score,  # Include quality_score in response
                 status="success"
             )
             

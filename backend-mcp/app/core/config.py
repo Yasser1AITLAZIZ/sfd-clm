@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     session_db_path: str = "data/sessions.db"
     session_ttl_seconds: int = 86400  # 24 hours
     
+    # Document uploads configuration
+    uploads_dir: str = "uploads"
+    
     # Langgraph configuration
     langgraph_url: str = "http://localhost:8002"
     langgraph_api_key: Optional[str] = None

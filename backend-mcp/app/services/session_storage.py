@@ -553,6 +553,24 @@ class SessionStorage:
             
             # Validate and serialize response
             try:
+                # Normalize status if present (schema only accepts "success", "error", "partial")
+                if "status" in langgraph_response:
+                    status_value = langgraph_response["status"]
+                    if isinstance(status_value, str):
+                        status_lower = status_value.lower()
+                        if status_lower not in ("success", "error", "partial"):
+                            if "error" in status_lower or "fail" in status_lower:
+                                langgraph_response["status"] = "error"
+                            elif "partial" in status_lower or "incomplete" in status_lower:
+                                langgraph_response["status"] = "partial"
+                            else:
+                                langgraph_response["status"] = "success"  # Default
+                
+                # Ensure timestamp is present (required field)
+                if "timestamp" not in langgraph_response or not langgraph_response.get("timestamp"):
+                    from datetime import datetime
+                    langgraph_response["timestamp"] = datetime.utcnow().isoformat()
+                
                 response_schema = LanggraphResponseDataSchema(**langgraph_response)
                 response_json = json.dumps(response_schema.model_dump(mode='json'))
             except Exception as schema_error:
@@ -562,7 +580,9 @@ class SessionStorage:
                     "Invalid langgraph_response schema",
                     session_id=session_id,
                     error_type=type(schema_error).__name__,
-                    error_message=str(schema_error) if schema_error else "Unknown"
+                    error_message=str(schema_error) if schema_error else "Unknown",
+                    langgraph_response_keys=list(langgraph_response.keys()) if isinstance(langgraph_response, dict) else [],
+                    langgraph_response_status=langgraph_response.get("status") if isinstance(langgraph_response, dict) else None
                 )
                 return False
             

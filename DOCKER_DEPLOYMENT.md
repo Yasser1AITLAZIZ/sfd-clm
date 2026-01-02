@@ -10,11 +10,12 @@ Ce guide explique comment déployer et tester les services du projet SFD-CLM en 
 
 ## Structure des Services
 
-Le projet contient trois services principaux :
+Le projet contient quatre services principaux :
 
 1. **mock-salesforce** (port 8001) : Service mock pour simuler l'API Salesforce
 2. **backend-mcp** (port 8000) : Service principal de traitement MCP
 3. **backend-langgraph** (port 8002) : Service LangGraph pour le traitement LLM
+4. **frontend** (port 3000) : Interface utilisateur React pour visualiser le pipeline
 
 ## Démarrage Rapide
 
@@ -42,6 +43,9 @@ docker-compose ps
 curl http://localhost:8001/health  # mock-salesforce
 curl http://localhost:8000/health  # backend-mcp
 curl http://localhost:8002/health  # backend-langgraph
+
+# Accéder au frontend
+# Ouvrir http://localhost:3000 dans un navigateur
 ```
 
 ### 3. Exécuter les tests de bout en bout
