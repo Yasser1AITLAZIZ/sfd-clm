@@ -163,3 +163,6 @@ The nginx configuration includes:
 - **Client-side routing support** (React Router)
 - **Security headers** (X-Frame-Options, X-Content-Type-Options, etc.)
 
+
+
+

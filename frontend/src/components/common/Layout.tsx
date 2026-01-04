@@ -14,6 +14,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/workflow', label: 'Workflow Orchestration' },
     { path: '/dataflow', label: 'Data Transformation' },
     { path: '/documents', label: 'Document Processing' },
+    { path: '/diagnostic', label: 'Service Diagnostic' },
   ];
 
   return (

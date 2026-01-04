@@ -51,6 +51,8 @@ export function usePipelineExecution() {
     setWorkflowId(null);
     // Clear all workflow-related queries
     queryClient.removeQueries({ queryKey: ['workflowStatus'] });
+    // Also invalidate form data queries to ensure fresh data on restart
+    queryClient.invalidateQueries({ queryKey: ['formData'] });
     // Clear localStorage
     if (typeof window !== 'undefined') {
       localStorage.removeItem(WORKFLOW_ID_STORAGE_KEY);

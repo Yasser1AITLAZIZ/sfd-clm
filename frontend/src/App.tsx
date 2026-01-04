@@ -6,6 +6,7 @@ import { FormPage } from './pages/FormPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { DataFlowPage } from './pages/DataFlowPage';
 import { DocumentViewerPage } from './pages/DocumentViewerPage';
+import { ServiceDiagnosticPage } from './pages/ServiceDiagnosticPage';
 import './App.css';
 
 const queryClient = new QueryClient({
@@ -27,6 +28,7 @@ function App() {
             <Route path="/workflow" element={<WorkflowPage />} />
             <Route path="/dataflow" element={<DataFlowPage />} />
             <Route path="/documents" element={<DocumentViewerPage />} />
+            <Route path="/diagnostic" element={<ServiceDiagnosticPage />} />
           </Routes>
         </Layout>
       </BrowserRouter>

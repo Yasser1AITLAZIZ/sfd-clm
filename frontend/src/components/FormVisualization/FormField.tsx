@@ -8,9 +8,10 @@ interface FormFieldProps {
   field: MatchedField;
   rootConfidenceScores?: Record<string, number>;
   hasExecutedPipeline?: boolean;
+  compact?: boolean;
 }
 
-export function FormField({ field, rootConfidenceScores, hasExecutedPipeline = false }: FormFieldProps) {
+export function FormField({ field, rootConfidenceScores, hasExecutedPipeline = false, compact = false }: FormFieldProps) {
   const confidence = getConfidenceScore(field, rootConfidenceScores);
   const isNotAvail = isNotAvailable(field.dataValue_target_AI);
   
@@ -18,12 +19,11 @@ export function FormField({ field, rootConfidenceScores, hasExecutedPipeline = f
   const initialValue = field.dataValue_target_AI || field.defaultValue || '';
   const [localValue, setLocalValue] = useState(initialValue);
   
-  // Update local value when field data changes (e.g., after pipeline execution)
+  // Update local value when field data changes (including when reset to null/empty on restart)
   useEffect(() => {
     const newValue = field.dataValue_target_AI || field.defaultValue || '';
-    if (newValue !== localValue) {
-      setLocalValue(newValue);
-    }
+    // Always update to ensure reset works correctly when field.dataValue_target_AI becomes null
+    setLocalValue(newValue);
   }, [field.dataValue_target_AI, field.defaultValue]);
   
   // Determine border color based on field state
@@ -134,6 +134,40 @@ export function FormField({ field, rootConfidenceScores, hasExecutedPipeline = f
         return <div className="text-gray-500">Unknown field type</div>;
     }
   };
+
+  if (compact) {
+    return (
+      <div className={`p-4 border-2 rounded-xl shadow-md transition-all duration-200 hover:shadow-lg ${borderColor}`}>
+        <div className="mb-2">
+          <label className="block text-sm font-semibold text-gray-900 mb-1">
+            {field.label}
+            {field.required && <span className="text-red-500 ml-1">*</span>}
+          </label>
+          {field.apiName && (
+            <span className="text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{field.apiName}</span>
+          )}
+        </div>
+        {renderInput()}
+        {field.isMatched && (
+          <div className="mt-2 flex gap-1">
+            <div className={`px-2 py-1 rounded text-xs font-semibold ${getScoreColorClass(confidence)}`}>
+              {formatConfidence(confidence)}
+            </div>
+          </div>
+        )}
+        {hasExecutedPipeline && isNotAvail && (
+          <div className="mt-2 p-1.5 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+            Value not available
+          </div>
+        )}
+        {hasExecutedPipeline && !field.isMatched && (
+          <div className="mt-2 p-1.5 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+            Field not found
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`p-6 border-2 rounded-xl shadow-md transition-all duration-200 hover:shadow-lg ${borderColor}`}>
