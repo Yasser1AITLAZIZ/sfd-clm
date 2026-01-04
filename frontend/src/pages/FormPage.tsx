@@ -1,5 +1,5 @@
 // Form Visualization Page - Only form display with horizontal layout
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useFormData } from '../hooks/useFormData';
@@ -10,6 +10,7 @@ import { WorkflowProgressBar } from '../components/FormVisualization/WorkflowPro
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorDisplay } from '../components/common/ErrorDisplay';
 import { matchFields } from '../utils/fieldMatcher';
+import { getWorkflowStatus } from '../services/workflow';
 import type { MatchedField } from '../types/form';
 
 const DEFAULT_RECORD_ID = '001XX000001';
@@ -43,40 +44,154 @@ export function FormPage() {
 
   const activeWorkflowId = workflowId || localWorkflowId;
 
-  // Listen for workflow execution results from WorkflowPage
+  // Load workflow results on mount if workflow exists (only once)
   useEffect(() => {
-    const handleWorkflowComplete = async () => {
-      if (activeWorkflowId && formData) {
-        // Refetch form data to get updated values after workflow execution
-        const result = await refetchForm();
-        if (result.data) {
-          // The form data should now contain filled values from the workflow
-          // We'll update matchedFields based on the workflow results
-          // This is a simplified version - you may need to fetch workflow status to get filled_form_json
+    let isMounted = true;
+    
+    const loadWorkflowResults = async () => {
+      // Only load if we have a workflow, formData, and no matched fields yet
+      if (!activeWorkflowId || !formData || matchedFields.length > 0) {
+        return;
+      }
+
+      try {
+        console.log('[FormPage] Loading existing workflow results for:', activeWorkflowId);
+        
+        // Fetch workflow status to get filled_form_json
+        const workflowStatus = await getWorkflowStatus(activeWorkflowId);
+
+        if (!isMounted) return; // Component unmounted, don't update state
+
+        // Extract filled_form_json from workflow status
+        const responseStep = workflowStatus?.steps?.find(s => s.step_name === 'response_handling');
+        const mcpStep = workflowStatus?.steps?.find(s => s.step_name === 'mcp_sending');
+        
+        let filledFormJson: any[] = [];
+        let confidenceScores: Record<string, number> = {};
+
+        // Try multiple paths to find filled_form_json
+        if (responseStep?.output_data?.filled_form_json && Array.isArray(responseStep.output_data.filled_form_json)) {
+          filledFormJson = responseStep.output_data.filled_form_json;
+          confidenceScores = responseStep.output_data.confidence_scores || {};
+          console.log('[FormPage] Found filled_form_json in response_handling:', filledFormJson.length, 'fields');
+        } else if (mcpStep?.output_data?.mcp_response?.filled_form_json && Array.isArray(mcpStep.output_data.mcp_response.filled_form_json)) {
+          filledFormJson = mcpStep.output_data.mcp_response.filled_form_json;
+          confidenceScores = mcpStep.output_data.mcp_response.confidence_scores || {};
+          console.log('[FormPage] Found filled_form_json in mcp_sending:', filledFormJson.length, 'fields');
+        } else if (workflowStatus?.steps?.some(s => s.status === 'completed')) {
+          // If workflow is completed but no filled_form_json found
+          console.log('[FormPage] Workflow completed but no filled_form_json found in steps');
+        }
+
+        if (!isMounted) return; // Check again before updating state
+
+        // If we found results, update the form
+        if (filledFormJson.length > 0 && formData) {
+          const matched = matchFields(formData.fields, filledFormJson);
+          setRootConfidenceScores(confidenceScores);
+          setMatchedFields(matched);
+          setHasExecutedPipeline(true);
+          console.log('[FormPage] Loaded existing workflow results:', matched.length, 'fields');
+        } else if (workflowStatus?.status === 'completed' || workflowStatus?.status === 'in_progress') {
+          // Mark as executed even if no results yet (workflow is running)
           setHasExecutedPipeline(true);
         }
+      } catch (error) {
+        console.error('[FormPage] Error loading workflow results:', error);
       }
     };
 
-    if (activeWorkflowId) {
-      handleWorkflowComplete();
+    loadWorkflowResults();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeWorkflowId, formData?.fields?.length]); // Only run when activeWorkflowId changes or formData structure changes
+
+  // Listen for workflow execution results in real-time (only if no matched fields yet)
+  useEffect(() => {
+    if (!activeWorkflowId || !formData || matchedFields.length > 0) {
+      return; // Don't poll if we already have results or no workflow
     }
-  }, [activeWorkflowId, formData, refetchForm]);
+
+    let pollCount = 0;
+    const maxPolls = 30; // Maximum 30 polls (60 seconds)
+    
+    // Poll workflow status to get results as they become available
+    const pollInterval = setInterval(async () => {
+      pollCount++;
+      
+      // Stop polling after max attempts
+      if (pollCount > maxPolls) {
+        clearInterval(pollInterval);
+        console.log('[FormPage] Stopped polling after max attempts');
+        return;
+      }
+
+      try {
+        const workflowStatus = await getWorkflowStatus(activeWorkflowId);
+        
+        // Check if workflow is completed and we have results
+        if (workflowStatus?.status === 'completed') {
+          const responseStep = workflowStatus?.steps?.find(s => s.step_name === 'response_handling');
+          const mcpStep = workflowStatus?.steps?.find(s => s.step_name === 'mcp_sending');
+          
+          let filledFormJson: any[] = [];
+          let confidenceScores: Record<string, number> = {};
+
+          if (responseStep?.output_data?.filled_form_json && Array.isArray(responseStep.output_data.filled_form_json)) {
+            filledFormJson = responseStep.output_data.filled_form_json;
+            confidenceScores = responseStep.output_data.confidence_scores || {};
+          } else if (mcpStep?.output_data?.mcp_response?.filled_form_json && Array.isArray(mcpStep.output_data.mcp_response.filled_form_json)) {
+            filledFormJson = mcpStep.output_data.mcp_response.filled_form_json;
+            confidenceScores = mcpStep.output_data.mcp_response.confidence_scores || {};
+          }
+
+          if (filledFormJson.length > 0 && formData) {
+            const matched = matchFields(formData.fields, filledFormJson);
+            setRootConfidenceScores(confidenceScores);
+            setMatchedFields(matched);
+            setHasExecutedPipeline(true);
+            clearInterval(pollInterval);
+            console.log('[FormPage] Polled and loaded workflow results:', matched.length, 'fields');
+          } else if (workflowStatus?.status === 'completed') {
+            // Workflow completed but no results found, stop polling
+            clearInterval(pollInterval);
+            console.log('[FormPage] Workflow completed but no filled_form_json found');
+          }
+        }
+      } catch (error) {
+        console.error('[FormPage] Error polling workflow status:', error);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [activeWorkflowId, formData]); // Remove matchedFields.length from dependencies to avoid infinite loops
 
   const handleRestartPipeline = () => {
+    console.log('[FormPage] Starting pipeline restart...');
+    
     // Clear workflow ID and all related state
     clearWorkflow();
-    // Reset form state
+    
+    // Reset ALL form state IMMEDIATELY
     setMatchedFields([]);
     setRootConfidenceScores({});
     setHasExecutedPipeline(false);
-    // Invalidate form data query cache to force fresh fetch (removes old AI-filled values)
-    queryClient.invalidateQueries({ queryKey: ['formData', recordId] });
+    setLocalWorkflowId(null); // CRITICAL: Clear local workflow ID
+    
+    // Force complete cache removal (not just invalidation)
+    queryClient.removeQueries({ queryKey: ['formData', recordId] });
+    queryClient.removeQueries({ queryKey: ['workflowStatus'] });
+    
     // Force remount of FormFieldList by changing key (resets all local field states)
     setRestartKey(prev => prev + 1);
-    // Clear any form field local values by reloading form data
-    refetchForm();
-    console.log('[FormPage] Pipeline restarted - all state cleared');
+    
+    // Refetch form data to get clean state (without AI values)
+    refetchForm().then(() => {
+      // After refetch, ensure displayFields is completely clean
+      console.log('[FormPage] Pipeline restarted - all state cleared and form data refreshed');
+    });
   };
 
   const handleExecutePipeline = async () => {
@@ -120,12 +235,25 @@ export function FormPage() {
         console.log('Found filled_form_json in data:', filledFormJson.length, 'fields');
       }
 
+      // CRITICAL: Store workflowId immediately in localStorage
+      if (response.workflow_id) {
+        localStorage.setItem('sfd-clm-workflow-id', response.workflow_id);
+        setLocalWorkflowId(response.workflow_id);
+        console.log('[FormPage] Stored workflowId in localStorage:', response.workflow_id);
+      }
+
       // Match fields
       if (filledFormJson.length > 0 && formData) {
         const matched = matchFields(formData.fields, filledFormJson);
         setRootConfidenceScores(confidenceScores);
         setMatchedFields(matched);
         setHasExecutedPipeline(true);
+      }
+      
+      // CRITICAL: Start polling workflow status immediately
+      if (response.workflow_id) {
+        queryClient.invalidateQueries({ queryKey: ['workflowStatus', response.workflow_id] });
+        queryClient.refetchQueries({ queryKey: ['workflowStatus', response.workflow_id] });
       }
       
       console.log('[FormPage] Pipeline executed successfully, workflowId:', response.workflow_id);
@@ -136,13 +264,31 @@ export function FormPage() {
 
 
   // Ensure displayFields always shows initial state (no AI values) when no matched fields
-  const displayFields = matchedFields.length > 0 
-    ? matchedFields 
-    : formData?.fields.map(f => ({
+  // Use useMemo to force reset when activeWorkflowId is cleared
+  const displayFields = useMemo(() => {
+    // If no matched fields AND no active workflow, return clean fields
+    if (matchedFields.length === 0 && !activeWorkflowId) {
+      return formData?.fields.map(f => ({
         ...f,
         isMatched: false,
-        dataValue_target_AI: null, // Explicitly clear AI values to return to initial state
+        dataValue_target_AI: null, // Explicitly clear AI values
+        dataValue: f.defaultValue || null, // Reset to default only
       })) || [];
+    }
+    
+    // If matched fields exist, use them
+    if (matchedFields.length > 0) {
+      return matchedFields;
+    }
+    
+    // Otherwise, return clean fields
+    return formData?.fields.map(f => ({
+      ...f,
+      isMatched: false,
+      dataValue_target_AI: null,
+      dataValue: f.defaultValue || null,
+    })) || [];
+  }, [matchedFields, formData, activeWorkflowId]);
 
   return (
     <div className="space-y-6">

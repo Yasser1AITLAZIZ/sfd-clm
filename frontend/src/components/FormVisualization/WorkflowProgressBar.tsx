@@ -19,8 +19,64 @@ const stepNames: Record<string, string> = {
 export function WorkflowProgressBar({ workflowId }: WorkflowProgressBarProps) {
   const { data: workflowStatus, isLoading } = useWorkflowStatus(workflowId, !!workflowId);
 
-  if (!workflowId || !workflowStatus) {
+  // CRITICAL: Show loading state instead of returning null
+  if (!workflowId) {
     return null;
+  }
+
+  // Show loading state while fetching initial status
+  if (isLoading && !workflowStatus) {
+    return (
+      <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-200/50">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Workflow Progress</h3>
+            <p className="text-sm text-gray-600 mt-1">Initializing workflow progress...</p>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              0%
+            </div>
+            <div className="text-xs text-gray-500 mt-1">Loading...</div>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+            </div>
+            <p className="mt-4 text-gray-600 font-medium">Fetching workflow status...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If still no status after loading, show waiting state
+  if (!workflowStatus) {
+    return (
+      <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-200/50">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Workflow Progress</h3>
+            <p className="text-sm text-gray-600 mt-1">Waiting for workflow to start...</p>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-bold bg-gradient-to-r from-gray-600 to-gray-800 bg-clip-text text-transparent">
+              0%
+            </div>
+            <div className="text-xs text-gray-500 mt-1">Pending</div>
+          </div>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden shadow-inner mb-4">
+          <div className="h-full rounded-full bg-gray-300" style={{ width: '0%' }} />
+        </div>
+        <div className="text-center py-4 text-gray-500">
+          <p>Workflow ID: <span className="font-mono text-sm">{workflowId}</span></p>
+          <p className="mt-2 text-sm">The workflow will appear here once it starts executing.</p>
+        </div>
+      </div>
+    );
   }
 
   const steps = workflowStatus.steps || [];

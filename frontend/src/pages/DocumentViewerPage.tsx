@@ -3,30 +3,103 @@ import { useState, useEffect } from 'react';
 import { useWorkflowStatus } from '../hooks/useWorkflowStatus';
 import { usePipelineExecution } from '../hooks/usePipelineExecution';
 import { useFormData } from '../hooks/useFormData';
+import { useWorkflowData } from '../hooks/useWorkflowData';
+
+const DEFAULT_RECORD_ID = '001XX000001';
+const RECORD_ID_STORAGE_KEY = 'sfd-clm-record-id';
 
 export function DocumentViewerPage() {
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
-  const { workflowId } = usePipelineExecution();
-  const { data: workflowStatus, isLoading, error } = useWorkflowStatus(workflowId, !!workflowId);
-  const { data: formData } = useFormData('001XX000001');
-
-  // Debug logging
-  useEffect(() => {
-    if (workflowId) {
-      console.log('[DocumentViewerPage] WorkflowId:', workflowId);
+  
+  // Get recordId from localStorage (shared with other pages)
+  const [recordId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(RECORD_ID_STORAGE_KEY) || DEFAULT_RECORD_ID;
     }
+    return DEFAULT_RECORD_ID;
+  });
+
+  // Get workflowId from hook and localStorage (like FormPage)
+  const { workflowId } = usePipelineExecution();
+  const [localWorkflowId, setLocalWorkflowId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const storedId = typeof window !== 'undefined' 
+      ? localStorage.getItem('sfd-clm-workflow-id') 
+      : null;
+    setLocalWorkflowId(storedId);
+  }, [workflowId]);
+
+  const activeWorkflowId = workflowId || localWorkflowId;
+
+  const { data: workflowStatus, isLoading, error } = useWorkflowStatus(
+    activeWorkflowId, 
+    !!activeWorkflowId
+  );
+  
+  const { data: formData } = useFormData(recordId);
+  
+  // Use custom hook to extract workflow data
+  const { documents, ocrText, fieldMappings } = useWorkflowData(workflowStatus);
+
+  // Enhanced debug logging
+  useEffect(() => {
+    console.log('[DocumentViewerPage] ========== DEBUG INFO ==========');
+    console.log('[DocumentViewerPage] Active WorkflowId:', activeWorkflowId);
+    console.log('[DocumentViewerPage] WorkflowId from hook:', workflowId);
+    console.log('[DocumentViewerPage] Local WorkflowId:', localWorkflowId);
+    console.log('[DocumentViewerPage] RecordId:', recordId);
+    
     if (workflowStatus) {
       console.log('[DocumentViewerPage] WorkflowStatus:', {
         status: workflowStatus.status,
         stepsCount: workflowStatus.steps?.length || 0,
-        preprocessingStep: workflowStatus.steps?.find(s => s.step_name === 'preprocessing'),
+        steps: workflowStatus.steps?.map(s => ({
+          name: s.step_name,
+          status: s.status,
+          hasOutput: !!s.output_data,
+          hasInput: !!s.input_data,
+        })),
+      });
+      
+      const preprocessingStep = workflowStatus.steps?.find(s => s.step_name === 'preprocessing');
+      const responseStep = workflowStatus.steps?.find(s => s.step_name === 'response_handling');
+      const mcpStep = workflowStatus.steps?.find(s => s.step_name === 'mcp_sending');
+      
+      console.log('[DocumentViewerPage] Preprocessing step:', {
+        hasOutput: !!preprocessingStep?.output_data,
+        outputKeys: preprocessingStep?.output_data ? Object.keys(preprocessingStep.output_data) : [],
+        hasInput: !!preprocessingStep?.input_data,
+        inputKeys: preprocessingStep?.input_data ? Object.keys(preprocessingStep.input_data) : [],
+      });
+      
+      console.log('[DocumentViewerPage] Response handling step:', {
+        hasOutput: !!responseStep?.output_data,
+        outputKeys: responseStep?.output_data ? Object.keys(responseStep.output_data) : [],
+        hasFilledFormJson: !!responseStep?.output_data?.filled_form_json,
+        filledFormJsonLength: responseStep?.output_data?.filled_form_json?.length || 0,
+      });
+      
+      console.log('[DocumentViewerPage] MCP sending step:', {
+        hasOutput: !!mcpStep?.output_data,
+        hasMcpResponse: !!mcpStep?.output_data?.mcp_response,
+        mcpResponseKeys: mcpStep?.output_data?.mcp_response ? Object.keys(mcpStep.output_data.mcp_response) : [],
+      });
+      
+      console.log('[DocumentViewerPage] Extracted data:', {
+        documentsCount: documents.length,
+        ocrTextLength: ocrText.length,
+        fieldMappingsCount: fieldMappings.length,
       });
     }
+    
     if (error) {
       console.error('[DocumentViewerPage] Error fetching workflow status:', error);
     }
-  }, [workflowId, workflowStatus, error]);
+    
+    console.log('[DocumentViewerPage] ================================');
+  }, [activeWorkflowId, workflowId, localWorkflowId, recordId, workflowStatus, documents, ocrText, fieldMappings, error]);
 
   // Extract data from workflow steps if available - only show if workflow has actually been executed
   const hasWorkflowData = !!workflowStatus && 
@@ -34,42 +107,6 @@ export function DocumentViewerPage() {
                          workflowStatus.steps && 
                          workflowStatus.steps.length > 0 &&
                          workflowStatus.steps.some(step => step.status === 'completed' || step.status === 'in_progress');
-  
-  // Extract documents from preprocessing step or form data
-  const preprocessingStep = workflowStatus?.steps?.find(s => s.step_name === 'preprocessing');
-  // Try multiple paths to find documents - check preprocessed_data structure
-  const documentsData = 
-    preprocessingStep?.output_data?.documents ||  // From output_data directly
-    preprocessingStep?.output_data?.preprocessed_data?.processed_documents ||  // From preprocessed_data.processed_documents
-    preprocessingStep?.output_data?.preprocessed_data?.documents ||  // From preprocessed_data.documents (fallback)
-    preprocessingStep?.input_data?.salesforce_data?.documents ||  // From input salesforce_data
-    preprocessingStep?.input_data?.documents ||  // From input_data directly
-    formData?.documents || [];  // Fallback to formData
-  
-  // Extract OCR text from preprocessing step
-  const ocrTextData = preprocessingStep?.output_data?.ocr_text || 
-                     preprocessingStep?.input_data?.ocr_text || '';
-  
-  // Extract field mappings from response_handling or mcp_sending step
-  const responseStep = workflowStatus?.steps?.find(s => s.step_name === 'response_handling');
-  const mcpStep = workflowStatus?.steps?.find(s => s.step_name === 'mcp_sending');
-  const fieldMappingsData = responseStep?.output_data?.field_mappings || 
-                           mcpStep?.output_data?.mcp_response?.field_mappings ||
-                           responseStep?.input_data?.field_mappings ||
-                           mcpStep?.input_data?.mcp_response?.field_mappings || [];
-
-  // Convert documents to display format
-  const documents = documentsData.map((doc: any, index: number) => ({
-    id: doc.document_id || `doc_${index + 1}`,
-    name: doc.name || 'Unknown document',
-    url: doc.url || '',
-    pages: doc.pages || 1,
-    type: doc.type || 'application/pdf',
-  }));
-
-  const ocrText = ocrTextData || '';
-
-  const fieldMappings = fieldMappingsData.length > 0 ? fieldMappingsData : [];
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return 'bg-green-100 text-green-800 border-green-300';
@@ -120,8 +157,8 @@ export function DocumentViewerPage() {
             </svg>
             <h3 className="text-xl font-semibold text-red-900 mb-2">Error Loading Document Data</h3>
             <p className="text-gray-600 mb-2">{error.message}</p>
-            {workflowId && (
-              <p className="text-sm text-gray-500">Workflow ID: {workflowId}</p>
+            {activeWorkflowId && (
+              <p className="text-sm text-gray-500">Workflow ID: {activeWorkflowId}</p>
             )}
           </div>
         </div>
@@ -133,8 +170,22 @@ export function DocumentViewerPage() {
             </svg>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">No Document Processing Data</h3>
             <p className="text-gray-600">Execute a workflow from the Form Visualization page to see document processing results here.</p>
-            {workflowId && (
-              <p className="text-sm text-gray-500 mt-2">Workflow ID: {workflowId} (No data found)</p>
+            {activeWorkflowId && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg text-left">
+                <p className="text-sm text-gray-700 font-semibold mb-2">Debug Information:</p>
+                <p className="text-xs text-gray-600">Workflow ID: <span className="font-mono">{activeWorkflowId}</span></p>
+                <p className="text-xs text-gray-600">Record ID: <span className="font-mono">{recordId}</span></p>
+                {workflowStatus && (
+                  <>
+                    <p className="text-xs text-gray-600 mt-1">Status: <span className="font-semibold">{workflowStatus.status}</span></p>
+                    <p className="text-xs text-gray-600">Steps: {workflowStatus.steps?.length || 0}</p>
+                    <p className="text-xs text-gray-600">Completed steps: {workflowStatus.steps?.filter(s => s.status === 'completed').length || 0}</p>
+                  </>
+                )}
+                {!workflowStatus && (
+                  <p className="text-xs text-red-600 mt-1">⚠️ Workflow status not found. Make sure the workflow was executed.</p>
+                )}
+              </div>
             )}
           </div>
         </div>
