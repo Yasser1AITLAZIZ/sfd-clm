@@ -68,3 +68,5 @@ test-data/results/
 
 debug-scripts/*.log
 debug-scripts/*.json
+backend-mcp/test-data/documents/*.pdf
+backend-mcp/uploads/*.pdf
