@@ -60,3 +60,30 @@ export async function getWorkflowSteps(workflowId: string): Promise<WorkflowStep
   }
 }
 
+/**
+ * Get list of recent workflows
+ * GET /api/workflow/recent?limit={limit}
+ */
+export async function getRecentWorkflows(limit: number = 10): Promise<Array<{
+  workflow_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  record_id: string;
+}>> {
+  try {
+    const response = await apiClient.get<ApiResponse<Array<{
+      workflow_id: string;
+      status: string;
+      started_at: string;
+      completed_at: string | null;
+      record_id: string;
+    }>>>(`/api/workflow/recent?limit=${limit}`);
+    
+    return extractApiData(response.data);
+  } catch (error) {
+    const apiError = handleApiError(error);
+    throw new Error(apiError.message);
+  }
+}
+

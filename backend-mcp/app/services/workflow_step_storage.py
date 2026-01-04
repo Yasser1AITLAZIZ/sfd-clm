@@ -647,4 +647,73 @@ class WorkflowStepStorage:
                 error_message=str(e) if e else "Unknown"
             )
             return None
+    
+    def get_recent_workflows(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get list of recent workflows with their status and metadata.
+        
+        Args:
+            limit: Maximum number of workflows to return
+            
+        Returns:
+            List of workflow dictionaries with workflow_id, status, started_at, completed_at, record_id
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT DISTINCT
+                        workflow_id,
+                        MIN(started_at) as started_at,
+                        MAX(CASE WHEN status = 'completed' THEN completed_at END) as completed_at,
+                        MAX(CASE WHEN step_name = 'validation_routing' THEN input_record_id END) as record_id,
+                        CASE 
+                            WHEN COUNT(CASE WHEN status = 'failed' THEN 1 END) > 0 THEN 'failed'
+                            WHEN COUNT(CASE WHEN status = 'in_progress' THEN 1 END) > 0 THEN 'in_progress'
+                            WHEN COUNT(CASE WHEN status = 'completed' THEN 1 END) = COUNT(*) THEN 'completed'
+                            ELSE 'pending'
+                        END as status
+                    FROM workflow_steps
+                    GROUP BY workflow_id
+                    ORDER BY started_at DESC
+                    LIMIT ?
+                """, (limit,))
+                
+                workflows = []
+                for row in cursor.fetchall():
+                    workflows.append({
+                        "workflow_id": row[0],
+                        "status": row[4],
+                        "started_at": row[1],
+                        "completed_at": row[2],
+                        "record_id": row[3] or "unknown"
+                    })
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "Recent workflows retrieved",
+                    count=len(workflows),
+                    limit=limit
+                )
+                
+                return workflows
+        except sqlite3.Error as e:
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Error retrieving recent workflows",
+                error_type=type(e).__name__,
+                error_message=str(e) if e else "Unknown error"
+            )
+            return []
+        except Exception as e:
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Unexpected error retrieving recent workflows",
+                error_type=type(e).__name__,
+                error_message=str(e) if e else "Unknown error",
+                traceback=traceback.format_exc()
+            )
+            return []
 

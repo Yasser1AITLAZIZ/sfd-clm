@@ -117,6 +117,8 @@ export function WorkflowPage() {
           onFileSelect={setSelectedFile}
           onUploadComplete={(documentId, url) => {
             setUploadedDocument({ document_id: documentId, url });
+            // CRITICAL: Invalidate formData cache to ensure document appears in Document Processing
+            queryClient.invalidateQueries({ queryKey: ['formData', recordId] });
             console.log('[WorkflowPage] Document uploaded successfully:', { documentId, url });
           }}
           recordId={recordId}

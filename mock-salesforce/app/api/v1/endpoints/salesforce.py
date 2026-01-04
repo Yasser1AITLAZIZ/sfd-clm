@@ -8,6 +8,7 @@ from app.models.schemas import GetRecordDataRequest, GetRecordDataResponse
 from app.data.mock_records import get_mock_record
 from app.core.exceptions import RecordNotFoundError, InvalidRecordIdError
 from app.core.logging import get_logger, safe_log
+from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -244,13 +245,43 @@ async def add_document_to_record(request_obj: Request) -> JSONResponse:
         from app.data.file_loader import get_test_data_base_path
         
         # Parse request body
-        request_data = await request_obj.json()
+        try:
+            request_data = await request_obj.json()
+        except Exception as json_error:
+            safe_log(
+                logger,
+                logging.ERROR,
+                "Failed to parse request body as JSON",
+                error_type=type(json_error).__name__,
+                error_message=str(json_error)
+            )
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Failed to parse request body: {str(json_error)}",
+                        "details": None
+                    }
+                }
+            )
         
         # Extract parameters from request body
         record_id = request_data.get("record_id")
         document_url = request_data.get("document_url")
         document_name = request_data.get("document_name")
         document_type = request_data.get("document_type", "application/pdf")
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Received add-document request",
+            record_id=record_id,
+            document_name=document_name,
+            document_url=document_url[:100] if document_url else None,  # Log first 100 chars
+            document_type=document_type
+        )
         
         # Validate record_id
         if not record_id or not record_id.strip():
@@ -322,18 +353,99 @@ async def add_document_to_record(request_obj: Request) -> JSONResponse:
             else:
                 extension = '.pdf'  # Default
         
-        filename = f"{record_id}_{clean_name}{extension}"
+        # IMPORTANT: backend-mcp already copies the file to test-data/documents/ with format:
+        # {record_id}_{original_filename}{extension}
+        # So we should first check if the file already exists there
         
-        # Download document from URL
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(document_url)
-            response.raise_for_status()
-            file_content = response.content
+        # Try to find existing file first (backend-mcp pattern: {record_id}_*)
+        existing_files = list(documents_dir.glob(f"{record_id}_*"))
+        file_content = None
+        file_path = None
+        filename = None
         
-        # Save to test-data/documents/
-        file_path = documents_dir / filename
-        with open(file_path, 'wb') as f:
-            f.write(file_content)
+        if existing_files:
+            # Use the most recent file (likely the one just uploaded)
+            existing_file = max(existing_files, key=lambda p: p.stat().st_mtime)
+            safe_log(
+                logger,
+                logging.INFO,
+                "Found existing document in test-data (uploaded by backend-mcp), using it",
+                record_id=record_id,
+                existing_file=str(existing_file),
+                file_size=existing_file.stat().st_size
+            )
+            with open(existing_file, 'rb') as f:
+                file_content = f.read()
+            filename = existing_file.name
+            file_path = existing_file
+        else:
+            # File doesn't exist, try to create it from the document_name
+            # This is a fallback in case backend-mcp didn't copy it
+            filename = f"{record_id}_{clean_name}{extension}"
+            file_path = documents_dir / filename
+            
+            # Try to download from URL as fallback
+            normalized_url = document_url
+            
+            # Handle relative URLs
+            if normalized_url.startswith("/uploads/"):
+                # Try to construct full URL
+                import os
+                if os.getenv("ENVIRONMENT", "production") == "development":
+                    normalized_url = f"http://localhost:8000{normalized_url}"
+                else:
+                    normalized_url = f"http://backend-mcp:8000{normalized_url}"
+            elif normalized_url.startswith("http://localhost:8000") or normalized_url.startswith("http://127.0.0.1:8000"):
+                # In Docker, replace localhost with service name
+                import os
+                if os.getenv("ENVIRONMENT", "production") != "development":
+                    normalized_url = normalized_url.replace("http://localhost:8000", "http://backend-mcp:8000")
+                    normalized_url = normalized_url.replace("http://127.0.0.1:8000", "http://backend-mcp:8000")
+            
+            try:
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "Downloading document from URL (fallback - file not found in test-data)",
+                    record_id=record_id,
+                    document_url=normalized_url,
+                    original_url=document_url
+                )
+                
+                async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                    response = await client.get(normalized_url)
+                    response.raise_for_status()
+                    file_content = response.content
+                
+                # Save downloaded file
+                with open(file_path, 'wb') as f:
+                    f.write(file_content)
+                
+                safe_log(
+                    logger,
+                    logging.INFO,
+                    "Document downloaded and saved successfully",
+                    record_id=record_id,
+                    document_url=normalized_url,
+                    file_size=len(file_content),
+                    file_path=str(file_path)
+                )
+            except httpx.HTTPError as http_error:
+                safe_log(
+                    logger,
+                    logging.ERROR,
+                    "Failed to download document from URL",
+                    record_id=record_id,
+                    document_url=normalized_url,
+                    original_url=document_url,
+                    error_type=type(http_error).__name__,
+                    error_message=str(http_error)
+                )
+                # If download fails, this is an error - we can't proceed
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to add document: File not found in test-data/documents/ and failed to download from URL. Error: {str(http_error)}"
+                )
         
         safe_log(
             logger,
@@ -359,14 +471,20 @@ async def add_document_to_record(request_obj: Request) -> JSONResponse:
             }
         )
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
         safe_log(
             logger,
             logging.ERROR,
             "Error adding document to record",
             record_id=record_id if 'record_id' in locals() else "unknown",
             error_type=type(e).__name__,
-            error_message=str(e) if e else "Unknown error"
+            error_message=str(e) if e else "Unknown error",
+            traceback=error_traceback
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -374,8 +492,8 @@ async def add_document_to_record(request_obj: Request) -> JSONResponse:
                 "status": "error",
                 "error": {
                     "code": "ADD_DOCUMENT_ERROR",
-                    "message": "Failed to add document to record",
-                    "details": str(e) if e else None
+                    "message": f"Failed to add document to record: {str(e)}",
+                    "details": error_traceback if settings.debug else None
                 }
             }
         )

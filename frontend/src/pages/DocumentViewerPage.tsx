@@ -40,8 +40,8 @@ export function DocumentViewerPage() {
   
   const { data: formData } = useFormData(recordId);
   
-  // Use custom hook to extract workflow data
-  const { documents, ocrText, fieldMappings } = useWorkflowData(workflowStatus);
+  // Use custom hook to extract workflow data (pass formData to include uploaded documents)
+  const { documents, ocrText, fieldMappings } = useWorkflowData(workflowStatus, formData);
 
   // Enhanced debug logging
   useEffect(() => {
@@ -102,11 +102,13 @@ export function DocumentViewerPage() {
   }, [activeWorkflowId, workflowId, localWorkflowId, recordId, workflowStatus, documents, ocrText, fieldMappings, error]);
 
   // Extract data from workflow steps if available - only show if workflow has actually been executed
-  const hasWorkflowData = !!workflowStatus && 
+  // OR if we have documents from formData (uploaded documents)
+  const hasWorkflowData = (!!workflowStatus && 
                          workflowStatus.status !== 'pending' && 
                          workflowStatus.steps && 
                          workflowStatus.steps.length > 0 &&
-                         workflowStatus.steps.some(step => step.status === 'completed' || step.status === 'in_progress');
+                         workflowStatus.steps.some(step => step.status === 'completed' || step.status === 'in_progress')) ||
+                         (documents.length > 0); // Show if we have documents even without workflow
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return 'bg-green-100 text-green-800 border-green-300';

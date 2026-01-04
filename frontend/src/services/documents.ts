@@ -35,7 +35,7 @@ export async function uploadDocument(
       const mockSalesforceUrl = import.meta.env.VITE_MOCK_SALESFORCE_URL || 
         (import.meta.env.DEV ? 'http://localhost:8001' : 'http://mock-salesforce:8001');
       
-      await fetch(`${mockSalesforceUrl}/mock/salesforce/add-document`, {
+      const addResponse = await fetch(`${mockSalesforceUrl}/mock/salesforce/add-document`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -48,10 +48,23 @@ export async function uploadDocument(
         })
       });
       
-      console.log('[uploadDocument] Document added to Mock Salesforce record');
-    } catch (addError) {
-      console.error('[uploadDocument] Failed to add document to Mock Salesforce:', addError);
-      // Don't fail the upload if adding to Mock Salesforce fails
+      if (!addResponse.ok) {
+        const errorData = await addResponse.json().catch(() => ({ error: { message: 'Unknown error' } }));
+        throw new Error(errorData.error?.message || `HTTP ${addResponse.status}: ${addResponse.statusText}`);
+      }
+      
+      const addResult = await addResponse.json();
+      console.log('[uploadDocument] Document added to Mock Salesforce record:', addResult);
+    } catch (addError: any) {
+      console.error('[uploadDocument] Failed to add document to Mock Salesforce:', {
+        error: addError,
+        message: addError?.message,
+        recordId,
+        documentUrl: uploadResult.url,
+        documentName: file.name
+      });
+      // Don't fail the upload if adding to Mock Salesforce fails, but log the error
+      // The document is already uploaded to backend-mcp and copied to test-data
     }
     
     return {

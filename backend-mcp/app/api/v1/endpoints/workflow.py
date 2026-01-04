@@ -312,3 +312,60 @@ async def get_workflow_steps(workflow_id: str) -> JSONResponse:
             }
         )
 
+
+@router.get(
+    "/api/workflow/recent",
+    status_code=status.HTTP_200_OK,
+    summary="Get recent workflows",
+    description="Get list of recently executed workflows"
+)
+async def get_recent_workflows(limit: int = 10) -> JSONResponse:
+    """
+    Get list of recent workflows.
+    
+    Args:
+        limit: Maximum number of workflows to return (default: 10)
+        
+    Returns:
+        JSON response with list of recent workflows
+    """
+    try:
+        step_storage = get_step_storage()
+        
+        # Get recent workflows from database
+        recent_workflows = step_storage.get_recent_workflows(limit=limit)
+        
+        safe_log(
+            logger,
+            logging.INFO,
+            "Recent workflows retrieved",
+            count=len(recent_workflows),
+            limit=limit
+        )
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "success",
+                "data": recent_workflows
+            }
+        )
+    except Exception as e:
+        safe_log(
+            logger,
+            logging.ERROR,
+            "Error retrieving recent workflows",
+            error_type=type(e).__name__,
+            error_message=str(e) if e else "Unknown error"
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "status": "error",
+                "error": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "Failed to retrieve recent workflows",
+                    "details": str(e) if e else None
+                }
+            }
+        )

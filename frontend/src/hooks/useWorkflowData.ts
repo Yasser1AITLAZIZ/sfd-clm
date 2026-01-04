@@ -1,6 +1,7 @@
 // Custom hook to extract workflow data (documents, OCR text, field mappings)
 import { useMemo } from 'react';
 import type { WorkflowStatusResponse } from '../types/workflow';
+import type { FormDataResponse } from '../types/form';
 
 interface ExtractedWorkflowData {
   documents: Array<{
@@ -20,9 +21,12 @@ interface ExtractedWorkflowData {
   }>;
 }
 
-export function useWorkflowData(workflowStatus: WorkflowStatusResponse | undefined): ExtractedWorkflowData {
+export function useWorkflowData(
+  workflowStatus: WorkflowStatusResponse | undefined,
+  formData?: FormDataResponse | null
+): ExtractedWorkflowData {
   return useMemo(() => {
-    if (!workflowStatus) {
+    if (!workflowStatus && !formData) {
       return { documents: [], ocrText: '', fieldMappings: [] };
     }
 
@@ -66,6 +70,13 @@ export function useWorkflowData(workflowStatus: WorkflowStatusResponse | undefin
       documentsData = Array.isArray(preprocessingStep.input_data.documents)
         ? preprocessingStep.input_data.documents
         : [];
+    }
+    
+    // Path 6: formData.documents (CRITICAL: Load from formData if workflow doesn't have documents)
+    // This ensures uploaded documents appear even if workflow hasn't been executed
+    if (documentsData.length === 0 && formData?.documents && Array.isArray(formData.documents)) {
+      documentsData = formData.documents;
+      console.log('[useWorkflowData] Using documents from formData:', documentsData.length);
     }
 
     // Convert documents to display format
@@ -180,6 +191,6 @@ export function useWorkflowData(workflowStatus: WorkflowStatusResponse | undefin
       ocrText,
       fieldMappings,
     };
-  }, [workflowStatus]);
+  }, [workflowStatus, formData]);
 }
 

@@ -7,6 +7,7 @@ import { usePipelineExecution } from '../hooks/usePipelineExecution';
 import { useServiceHealth } from '../hooks/useServiceHealth';
 import { FormFieldList } from '../components/FormVisualization/FormFieldList';
 import { WorkflowProgressBar } from '../components/FormVisualization/WorkflowProgressBar';
+import { RecentWorkflowsList } from '../components/FormVisualization/RecentWorkflowsList';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorDisplay } from '../components/common/ErrorDisplay';
 import { matchFields } from '../utils/fieldMatcher';
@@ -36,82 +37,77 @@ export function FormPage() {
   const { data: servicesHealth } = useServiceHealth();
   const allServicesHealthy = servicesHealth?.every(s => s.status === 'healthy') ?? false;
   const [localWorkflowId, setLocalWorkflowId] = useState<string | null>(null);
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(false);
   
+  // Sync workflowId from usePipelineExecution (only after new execution)
   useEffect(() => {
-    const storedId = typeof window !== 'undefined' ? localStorage.getItem('sfd-clm-workflow-id') : null;
-    setLocalWorkflowId(storedId);
+    if (workflowId) {
+      setLocalWorkflowId(workflowId);
+      localStorage.setItem('sfd-clm-workflow-id', workflowId);
+    }
   }, [workflowId]);
 
   const activeWorkflowId = workflowId || localWorkflowId;
 
-  // Load workflow results on mount if workflow exists (only once)
-  useEffect(() => {
-    let isMounted = true;
-    
-    const loadWorkflowResults = async () => {
-      // Only load if we have a workflow, formData, and no matched fields yet
-      if (!activeWorkflowId || !formData || matchedFields.length > 0) {
-        return;
+  // Function to manually load a workflow (called from RecentWorkflowsList)
+  const handleLoadWorkflow = async (workflowIdToLoad: string) => {
+    if (!formData) {
+      console.warn('[FormPage] Cannot load workflow: formData not available');
+      return;
+    }
+
+    setIsLoadingWorkflow(true);
+    try {
+      console.log('[FormPage] Loading workflow results for:', workflowIdToLoad);
+      
+      const workflowStatus = await getWorkflowStatus(workflowIdToLoad);
+      
+      // Extract filled_form_json from workflow status
+      const responseStep = workflowStatus?.steps?.find(s => s.step_name === 'response_handling');
+      const mcpStep = workflowStatus?.steps?.find(s => s.step_name === 'mcp_sending');
+      
+      let filledFormJson: any[] = [];
+      let confidenceScores: Record<string, number> = {};
+
+      // Try multiple paths to find filled_form_json
+      if (responseStep?.output_data?.filled_form_json && Array.isArray(responseStep.output_data.filled_form_json)) {
+        filledFormJson = responseStep.output_data.filled_form_json;
+        confidenceScores = responseStep.output_data.confidence_scores || {};
+        console.log('[FormPage] Found filled_form_json in response_handling:', filledFormJson.length, 'fields');
+      } else if (mcpStep?.output_data?.mcp_response?.filled_form_json && Array.isArray(mcpStep.output_data.mcp_response.filled_form_json)) {
+        filledFormJson = mcpStep.output_data.mcp_response.filled_form_json;
+        confidenceScores = mcpStep.output_data.mcp_response.confidence_scores || {};
+        console.log('[FormPage] Found filled_form_json in mcp_sending:', filledFormJson.length, 'fields');
       }
 
-      try {
-        console.log('[FormPage] Loading existing workflow results for:', activeWorkflowId);
+      // If we found results, update the form
+      if (filledFormJson.length > 0 && formData) {
+        const matched = matchFields(formData.fields, filledFormJson);
+        setRootConfidenceScores(confidenceScores);
+        setMatchedFields(matched);
+        setHasExecutedPipeline(true);
         
-        // Fetch workflow status to get filled_form_json
-        const workflowStatus = await getWorkflowStatus(activeWorkflowId);
-
-        if (!isMounted) return; // Component unmounted, don't update state
-
-        // Extract filled_form_json from workflow status
-        const responseStep = workflowStatus?.steps?.find(s => s.step_name === 'response_handling');
-        const mcpStep = workflowStatus?.steps?.find(s => s.step_name === 'mcp_sending');
+        // Store workflowId in localStorage and state
+        localStorage.setItem('sfd-clm-workflow-id', workflowIdToLoad);
+        setLocalWorkflowId(workflowIdToLoad);
         
-        let filledFormJson: any[] = [];
-        let confidenceScores: Record<string, number> = {};
-
-        // Try multiple paths to find filled_form_json
-        if (responseStep?.output_data?.filled_form_json && Array.isArray(responseStep.output_data.filled_form_json)) {
-          filledFormJson = responseStep.output_data.filled_form_json;
-          confidenceScores = responseStep.output_data.confidence_scores || {};
-          console.log('[FormPage] Found filled_form_json in response_handling:', filledFormJson.length, 'fields');
-        } else if (mcpStep?.output_data?.mcp_response?.filled_form_json && Array.isArray(mcpStep.output_data.mcp_response.filled_form_json)) {
-          filledFormJson = mcpStep.output_data.mcp_response.filled_form_json;
-          confidenceScores = mcpStep.output_data.mcp_response.confidence_scores || {};
-          console.log('[FormPage] Found filled_form_json in mcp_sending:', filledFormJson.length, 'fields');
-        } else if (workflowStatus?.steps?.some(s => s.status === 'completed')) {
-          // If workflow is completed but no filled_form_json found
-          console.log('[FormPage] Workflow completed but no filled_form_json found in steps');
-        }
-
-        if (!isMounted) return; // Check again before updating state
-
-        // If we found results, update the form
-        if (filledFormJson.length > 0 && formData) {
-          const matched = matchFields(formData.fields, filledFormJson);
-          setRootConfidenceScores(confidenceScores);
-          setMatchedFields(matched);
-          setHasExecutedPipeline(true);
-          console.log('[FormPage] Loaded existing workflow results:', matched.length, 'fields');
-        } else if (workflowStatus?.status === 'completed' || workflowStatus?.status === 'in_progress') {
-          // Mark as executed even if no results yet (workflow is running)
-          setHasExecutedPipeline(true);
-        }
-      } catch (error) {
-        console.error('[FormPage] Error loading workflow results:', error);
+        console.log('[FormPage] Loaded workflow results:', matched.length, 'fields');
+      } else {
+        console.warn('[FormPage] No filled_form_json found in workflow');
       }
-    };
+    } catch (error) {
+      console.error('[FormPage] Error loading workflow results:', error);
+    } finally {
+      setIsLoadingWorkflow(false);
+    }
+  };
 
-    loadWorkflowResults();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [activeWorkflowId, formData?.fields?.length]); // Only run when activeWorkflowId changes or formData structure changes
-
-  // Listen for workflow execution results in real-time (only if no matched fields yet)
+  // Listen for workflow execution results in real-time (only for newly executed workflows)
   useEffect(() => {
-    if (!activeWorkflowId || !formData || matchedFields.length > 0) {
-      return; // Don't poll if we already have results or no workflow
+    // Only poll if workflow was just executed (workflowId from usePipelineExecution)
+    // NOT if it was loaded manually from RecentWorkflowsList
+    if (!workflowId || !formData || matchedFields.length > 0) {
+      return;
     }
 
     let pollCount = 0;
@@ -129,7 +125,7 @@ export function FormPage() {
       }
 
       try {
-        const workflowStatus = await getWorkflowStatus(activeWorkflowId);
+        const workflowStatus = await getWorkflowStatus(workflowId);
         
         // Check if workflow is completed and we have results
         if (workflowStatus?.status === 'completed') {
@@ -166,7 +162,7 @@ export function FormPage() {
     }, 2000); // Poll every 2 seconds
 
     return () => clearInterval(pollInterval);
-  }, [activeWorkflowId, formData]); // Remove matchedFields.length from dependencies to avoid infinite loops
+  }, [workflowId, formData]); // Only poll for newly executed workflows
 
   const handleRestartPipeline = () => {
     console.log('[FormPage] Starting pipeline restart...');
@@ -301,6 +297,10 @@ export function FormPage() {
             </h1>
             <p className="text-gray-600 text-lg">View and interact with Salesforce form fields</p>
           </div>
+          <RecentWorkflowsList 
+            onSelectWorkflow={handleLoadWorkflow}
+            currentWorkflowId={activeWorkflowId}
+          />
           {activeWorkflowId && (
             <Link
               to="/workflow"
