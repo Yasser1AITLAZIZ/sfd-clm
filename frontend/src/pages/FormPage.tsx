@@ -190,6 +190,36 @@ export function FormPage() {
     });
   };
 
+  // Function to reset form to initial state (new form)
+  const handleResetForm = () => {
+    console.log('[FormPage] Resetting form to initial state...');
+    
+    // Clear workflow ID from localStorage and state
+    localStorage.removeItem('sfd-clm-workflow-id');
+    clearWorkflow();
+    
+    // Reset ALL form state
+    setMatchedFields([]);
+    setRootConfidenceScores({});
+    setHasExecutedPipeline(false);
+    setLocalWorkflowId(null);
+    
+    // Reset user message to default
+    setUserMessage('Remplis tous les champs manquants');
+    
+    // Force complete cache removal
+    queryClient.removeQueries({ queryKey: ['formData', recordId] });
+    queryClient.removeQueries({ queryKey: ['workflowStatus'] });
+    
+    // Force remount of FormFieldList
+    setRestartKey(prev => prev + 1);
+    
+    // Refetch form data to get clean state
+    refetchForm().then(() => {
+      console.log('[FormPage] Form reset to initial state - all data cleared');
+    });
+  };
+
   const handleExecutePipeline = async () => {
     if (!formData) return;
 
@@ -290,25 +320,39 @@ export function FormPage() {
     <div className="space-y-6">
       {/* Header Section */}
       <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-gray-200/50">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-indigo-800 bg-clip-text text-transparent mb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-2">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-800 to-indigo-800 bg-clip-text text-transparent mb-2">
               Form Visualization
             </h1>
-            <p className="text-gray-600 text-lg">View and interact with Salesforce form fields</p>
+            <p className="text-gray-600 text-base sm:text-lg">View and interact with Salesforce form fields</p>
           </div>
-          <RecentWorkflowsList 
-            onSelectWorkflow={handleLoadWorkflow}
-            currentWorkflowId={activeWorkflowId}
-          />
-          {activeWorkflowId && (
-            <Link
-              to="/workflow"
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={handleResetForm}
+              className="px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 flex items-center space-x-2 whitespace-nowrap"
+              title="Réinitialiser le formulaire à l'état vierge"
             >
-              View Workflow Status
-            </Link>
-          )}
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span className="hidden sm:inline">Nouveau formulaire</span>
+              <span className="sm:hidden">Nouveau</span>
+            </button>
+            <RecentWorkflowsList 
+              onSelectWorkflow={handleLoadWorkflow}
+              currentWorkflowId={activeWorkflowId}
+            />
+            {activeWorkflowId && (
+              <Link
+                to="/workflow"
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 whitespace-nowrap"
+              >
+                <span className="hidden sm:inline">View Workflow Status</span>
+                <span className="sm:hidden">Workflow</span>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
