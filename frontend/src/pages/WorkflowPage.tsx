@@ -115,11 +115,18 @@ export function WorkflowPage() {
         </h2>
         <DocumentUpload
           onFileSelect={setSelectedFile}
-          onUploadComplete={(documentId, url) => {
+          onUploadComplete={async (documentId, url) => {
             setUploadedDocument({ document_id: documentId, url });
-            // CRITICAL: Invalidate formData cache to ensure document appears in Document Processing
-            queryClient.invalidateQueries({ queryKey: ['formData', recordId] });
-            console.log('[WorkflowPage] Document uploaded successfully:', { documentId, url });
+            
+            // CRITICAL: Invalidate AND refetch formData immediately
+            // This ensures the document from test-data/documents/ is loaded
+            await queryClient.invalidateQueries({ queryKey: ['formData', recordId] });
+            await queryClient.refetchQueries({ 
+              queryKey: ['formData', recordId],
+              exact: true 
+            });
+            
+            console.log('[WorkflowPage] Document uploaded and formData refetched from test-data/documents/');
           }}
           recordId={recordId}
           disabled={false}

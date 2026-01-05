@@ -50,6 +50,10 @@ export function DocumentViewerPage() {
     console.log('[DocumentViewerPage] WorkflowId from hook:', workflowId);
     console.log('[DocumentViewerPage] Local WorkflowId:', localWorkflowId);
     console.log('[DocumentViewerPage] RecordId:', recordId);
+    console.log('[DocumentViewerPage] Has WorkflowStatus:', !!workflowStatus);
+    console.log('[DocumentViewerPage] Has FormData:', !!formData);
+    console.log('[DocumentViewerPage] FormData Documents:', formData?.documents?.length || 0);
+    console.log('[DocumentViewerPage] Extracted Documents:', documents.length);
     
     if (workflowStatus) {
       console.log('[DocumentViewerPage] WorkflowStatus:', {
@@ -101,14 +105,18 @@ export function DocumentViewerPage() {
     console.log('[DocumentViewerPage] ================================');
   }, [activeWorkflowId, workflowId, localWorkflowId, recordId, workflowStatus, documents, ocrText, fieldMappings, error]);
 
-  // Extract data from workflow steps if available - only show if workflow has actually been executed
-  // OR if we have documents from formData (uploaded documents)
+  // IMPROVED: Check for documents from ANY source (workflow OR formData from test-data/documents/)
+  // Show page if:
+  // 1. Workflow exists and has completed/in_progress steps, OR
+  // 2. Documents extracted from workflow or formData, OR
+  // 3. Documents directly available in formData.documents (from test-data/documents/)
   const hasWorkflowData = (!!workflowStatus && 
                          workflowStatus.status !== 'pending' && 
                          workflowStatus.steps && 
                          workflowStatus.steps.length > 0 &&
                          workflowStatus.steps.some(step => step.status === 'completed' || step.status === 'in_progress')) ||
-                         (documents.length > 0); // Show if we have documents even without workflow
+                         (documents.length > 0) || // Documents extracted from workflow or formData
+                         (formData?.documents && formData.documents.length > 0); // Direct check of formData.documents from test-data/documents/
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return 'bg-green-100 text-green-800 border-green-300';

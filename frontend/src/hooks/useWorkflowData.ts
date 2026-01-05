@@ -26,7 +26,28 @@ export function useWorkflowData(
   formData?: FormDataResponse | null
 ): ExtractedWorkflowData {
   return useMemo(() => {
-    if (!workflowStatus && !formData) {
+    // PRIORITY 1: If no workflow, use formData directly (uploaded documents from test-data/documents/)
+    if (!workflowStatus && formData) {
+      const documentsData = formData.documents || [];
+      const documents = documentsData.map((doc: any, index: number) => ({
+        id: doc.document_id || doc.id || `doc_${index + 1}`,
+        name: doc.name || doc.filename || 'Unknown document',
+        url: doc.url || '',
+        pages: doc.pages || 1,
+        type: doc.type || 'application/pdf',
+      }));
+      
+      console.log('[useWorkflowData] No workflow - using formData documents from test-data/documents/:', documents.length);
+      
+      return {
+        documents,
+        ocrText: '',
+        fieldMappings: [],
+      };
+    }
+
+    // PRIORITY 2: If workflow exists, try to extract from workflow steps first
+    if (!workflowStatus) {
       return { documents: [], ocrText: '', fieldMappings: [] };
     }
 
@@ -38,7 +59,7 @@ export function useWorkflowData(
     // ========== EXTRACT DOCUMENTS ==========
     let documentsData: any[] = [];
 
-    // Try all possible paths for documents
+    // Try all possible paths for documents from workflow
     if (preprocessingStep?.output_data) {
       // Path 1: output_data.documents directly
       if (Array.isArray(preprocessingStep.output_data.documents)) {
@@ -72,11 +93,11 @@ export function useWorkflowData(
         : [];
     }
     
-    // Path 6: formData.documents (CRITICAL: Load from formData if workflow doesn't have documents)
-    // This ensures uploaded documents appear even if workflow hasn't been executed
+    // Path 6: formData.documents (FALLBACK: Use formData if workflow doesn't have documents)
+    // This ensures uploaded documents from test-data/documents/ appear even if workflow hasn't processed them yet
     if (documentsData.length === 0 && formData?.documents && Array.isArray(formData.documents)) {
       documentsData = formData.documents;
-      console.log('[useWorkflowData] Using documents from formData:', documentsData.length);
+      console.log('[useWorkflowData] Workflow has no documents - using formData from test-data/documents/:', documentsData.length);
     }
 
     // Convert documents to display format
