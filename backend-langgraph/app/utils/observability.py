@@ -24,7 +24,7 @@ def setup_phoenix_observability(
     log.info("[Observability] Observability disabled by default to avoid OpenTelemetry errors")
     
     # Optionnel : activer seulement si nécessaire
-    if os.getenv("ENABLE_PHOENIX", "false").lower() == "true":
+    if os.getenv("ENABLE_PHOENIX", "true").lower() == "true":
         try:
             from phoenix.otel import register
             from openinference.instrumentation.langchain import LangChainInstrumentor

@@ -1,8 +1,8 @@
 supervisor:
   name: "mcp_supervisor"
   provider: "openai"  # or "anthropic"
-  model: "gpt-4.1-2025-04-14"  # or "claude-3-5-sonnet-20241022"
-  temperature: 0.1
+  model: "gpt-5-mini-2025-08-07"  # or "claude-3-5-sonnet-20241022"
+  # temperature: 0.1
   reasoning_effort: "medium"  # for OpenAI o3 models
 
 ocr:
@@ -17,7 +17,7 @@ ocr:
 
 mapping:
   provider: "openai"
-  model: "gpt-4.1-2025-04-14"
+  model: "gpt-4o-2024-11-20"
   temperature: 0.0
   # Timeout per page for field mapping (120s)
   # Mapping is sequential (one page at a time) and more complex than OCR
