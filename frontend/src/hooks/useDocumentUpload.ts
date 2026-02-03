@@ -13,7 +13,7 @@ export function useDocumentUpload() {
     { recordId: string; file: File }
   >({
     mutationFn: ({ recordId, file }) => uploadDocument(recordId, file),
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       setUploadProgress(0);
       // CRITICAL: Invalidate formData cache to refresh documents list
       // This ensures the newly uploaded document appears in Document Processing page

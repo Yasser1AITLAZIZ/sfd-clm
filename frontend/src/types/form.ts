@@ -9,6 +9,8 @@ export interface FormField {
   required: boolean;
   possibleValues: string[];         // Empty array for text/number/textarea
   defaultValue: string | null;      // May be null
+  /** Frontend-only: assign field to a form group (page). Backend ignores this. */
+  formGroup?: string;
 }
 
 export interface FilledFormField {
@@ -45,6 +47,9 @@ export interface MockSalesforceResponse {
   fields_to_fill: [];               // Empty array in provided example
   fields: FormField[];              // Array of form fields
 }
+
+/** Alias for MockSalesforceResponse (used by useWorkflowData and others). */
+export type FormDataResponse = MockSalesforceResponse;
 
 export interface PipelineOutputResponse {
   message_id: string;

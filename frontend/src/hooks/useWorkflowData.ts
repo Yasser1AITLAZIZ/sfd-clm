@@ -176,7 +176,7 @@ export function useWorkflowData(
         .map((f: any) => ({
           field_label: f.label || f.apiName || 'Unknown',
           ocr_text: f.dataValue_target_AI || '',
-          confidence: f.confidence || f.quality_score || responseStep.output_data.confidence_scores?.[f.apiName || f.label] || 0,
+          confidence: f.confidence || f.quality_score || responseStep.output_data?.confidence_scores?.[f.apiName || f.label] || 0,
           source_page: f.source_page || f.page_number,
           apiName: f.apiName || f.api_name,
         }));
@@ -201,7 +201,7 @@ export function useWorkflowData(
         .map((f: any) => ({
           field_label: f.label || f.apiName || 'Unknown',
           ocr_text: f.dataValue_target_AI || '',
-          confidence: f.confidence || f.quality_score || mcpStep.output_data.mcp_response.confidence_scores?.[f.apiName || f.label] || 0,
+          confidence: f.confidence || f.quality_score || mcpStep.output_data?.mcp_response?.confidence_scores?.[f.apiName || f.label] || 0,
           source_page: f.source_page || f.page_number,
           apiName: f.apiName || f.api_name,
         }));
