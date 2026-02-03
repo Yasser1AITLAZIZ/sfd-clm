@@ -1,5 +1,5 @@
 // Form area with button-based pagination across form groups (pages)
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { FormFieldList } from './FormFieldList';
 import { groupFieldsByFormGroup, DEFAULT_FORM_GROUP_ORDER, getOrderedGroupNames } from '../../utils/formGrouping';
 import type { MatchedField } from '../../types/form';
@@ -20,6 +20,7 @@ export function FormPagination({
   layout = 'horizontal',
 }: FormPaginationProps) {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(
     () => groupFieldsByFormGroup(fields, formGroupOrder),
@@ -42,6 +43,11 @@ export function FormPagination({
       setCurrentPageIndex(groupNames.length - 1);
     }
   }, [groupNames.length, currentPageIndex]);
+
+  // Reset scroll position when changing page so the new step content starts at top
+  useEffect(() => {
+    scrollContainerRef.current?.scrollTo(0, 0);
+  }, [currentGroupName]);
 
   const goPrev = () => setCurrentPageIndex((i) => (i > 0 ? i - 1 : i));
   const goNext = () => setCurrentPageIndex((i) => (i < totalPages - 1 ? i + 1 : i));
@@ -95,7 +101,7 @@ export function FormPagination({
         </span>
       </h3>
       {/* Fields for current group */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto">
         <FormFieldList
           fields={currentFields}
           rootConfidenceScores={rootConfidenceScores}

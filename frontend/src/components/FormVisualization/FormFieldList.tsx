@@ -20,7 +20,7 @@ export function FormFieldList({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {fields.map((field) => (
           <FormField
-            key={field.label}
+            key={field.apiName ?? `${field.formGroup ?? 'default'}-${field.label}`}
             field={field}
             rootConfidenceScores={rootConfidenceScores}
             hasExecutedPipeline={hasExecutedPipeline}
@@ -35,7 +35,7 @@ export function FormFieldList({
     <div className="space-y-6">
       {fields.map((field) => (
         <FormField
-          key={field.label}
+          key={field.apiName ?? `${field.formGroup ?? 'default'}-${field.label}`}
           field={field}
           rootConfidenceScores={rootConfidenceScores}
           hasExecutedPipeline={hasExecutedPipeline}
