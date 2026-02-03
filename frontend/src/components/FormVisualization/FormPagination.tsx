@@ -1,5 +1,5 @@
 // Form area with button-based pagination across form groups (pages)
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { FormFieldList } from './FormFieldList';
 import { groupFieldsByFormGroup, DEFAULT_FORM_GROUP_ORDER, getOrderedGroupNames } from '../../utils/formGrouping';
 import type { MatchedField } from '../../types/form';
@@ -25,10 +25,23 @@ export function FormPagination({
     () => groupFieldsByFormGroup(fields, formGroupOrder),
     [fields, formGroupOrder]
   );
-  const groupNames = getOrderedGroupNames(formGroupOrder);
-  const currentGroupName = groupNames[currentPageIndex] ?? groupNames[0];
+  // Only show tabs for groups that have at least one field (hide empty steps)
+  const groupNames = useMemo(() => {
+    const order = getOrderedGroupNames(formGroupOrder);
+    return order.filter((name) => (groups.get(name)?.length ?? 0) > 0);
+  }, [formGroupOrder, groups]);
+
+  const safePageIndex = Math.min(currentPageIndex, Math.max(0, groupNames.length - 1));
+  const currentGroupName = groupNames[safePageIndex] ?? groupNames[0];
   const currentFields = groups.get(currentGroupName) ?? [];
   const totalPages = groupNames.length;
+
+  // Keep page index in bounds when the number of visible tabs changes (e.g. empty groups hidden)
+  useEffect(() => {
+    if (currentPageIndex >= groupNames.length && groupNames.length > 0) {
+      setCurrentPageIndex(groupNames.length - 1);
+    }
+  }, [groupNames.length, currentPageIndex]);
 
   const goPrev = () => setCurrentPageIndex((i) => (i > 0 ? i - 1 : i));
   const goNext = () => setCurrentPageIndex((i) => (i < totalPages - 1 ? i + 1 : i));
@@ -53,12 +66,12 @@ export function FormPagination({
               type="button"
               onClick={() => setCurrentPageIndex(i)}
               className={`min-w-[2.25rem] px-2 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                i === currentPageIndex
+                i === safePageIndex
                   ? 'bg-blue-600 text-white border-2 border-blue-600'
                   : 'border-2 border-gray-300 text-gray-700 hover:bg-gray-100'
               }`}
               aria-label={`Page ${i + 1}: ${name}`}
-              aria-current={i === currentPageIndex ? 'page' : undefined}
+              aria-current={i === safePageIndex ? 'page' : undefined}
             >
               {i + 1}
             </button>

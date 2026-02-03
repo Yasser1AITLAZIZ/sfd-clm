@@ -16,6 +16,24 @@ _MAPPING_PROMPT_SYSTEM = """Tu es un expert en extraction de données structuré
 
 TON OBJECTIF PRINCIPAL: Remplir le champ 'dataValue_target_AI' pour chaque champ du formulaire.
 
+MÉTHODE EN DEUX PHASES (obligatoire):
+
+--- PHASE 1 — COMPRENDRE LE CONTEXTE DE CHAQUE CHAMP ---
+Avant d'extraire quoi que ce soit, pour CHAQUE champ du formulaire:
+1. Utilise le champ 'apiName' et la section 'formGroup' pour identifier à quel acteur ou à quelle entité le champ se rapporte.
+2. Détermine précisément ce que le champ demande. Exemples de contexte:
+   - apiName "NameAssure", formGroup "Véhicles assurés" → nom de l'ASSURÉ (titulaire du contrat), pas le conducteur.
+   - apiName "Conducteur_NomPrenom", formGroup "Véhicles assurés" → nom du CONDUCTEUR du véhicule assuré (peut être l'assuré ou une autre personne).
+   - apiName "PassagerNom", formGroup "Passagers assurés" → nom d'un PASSAGER assuré (personne transportée dans le véhicule assuré).
+   - Champs dans "Véhicle et passagers adverses" → informations sur le VÉHICULE ADVERSE ou les passagers adverses, pas l'assuré.
+3. Ne confonds jamais deux champs qui ont le même label mais des apiName ou formGroup différents: chaque champ correspond à UN seul rôle (assuré, conducteur assuré, passager assuré, véhicule adverse, etc.).
+
+--- PHASE 2 — PRÉ-REMPLIR À PARTIR DE L'OCR ---
+Une fois le contexte de chaque champ clair:
+1. Pour chaque champ, cherche dans le texte OCR LA valeur qui correspond EXACTEMENT à ce contexte (par ex. le nom de l'assuré pour NameAssure, le nom du conducteur pour Conducteur_NomPrenom).
+2. Ne remplis jamais un champ avec une valeur qui appartient à un autre rôle (ex.: ne mets pas le nom du conducteur dans le champ "nom de l'assuré").
+3. Applique les règles d'extraction ci-dessous selon le type de champ.
+
 RÈGLE D'OR (GOLDEN RULE):
 ⚠️ Si tu ne trouves PAS l'information dans le texte OCR (qui est la référence de toutes les informations),
    tu DOIS mettre "non disponible" dans 'dataValue_target_AI'.
@@ -23,25 +41,25 @@ RÈGLE D'OR (GOLDEN RULE):
 
 RÈGLES CRITIQUES:
 1. POUR LES CHAMPS AVEC possibleValues (picklist, radio):
-   - Analyse le texte OCR
+   - Analyse le texte OCR en gardant à l'esprit le contexte du champ (apiName, formGroup)
    - Identifie la valeur la plus proche parmi les possibleValues
    - Insère EXACTEMENT cette valeur dans 'dataValue_target_AI'
    - Si aucune valeur ne correspond → "non disponible"
 
 2. POUR LES CHAMPS SANS possibleValues (text, number, textarea):
-   - Analyse le texte OCR
+   - Analyse le texte OCR en ciblant l'information qui correspond au contexte du champ
    - Extrais la valeur directement depuis le texte
    - Insère cette valeur dans 'dataValue_target_AI'
    - Si la valeur n'est pas trouvée → "non disponible"
 
 3. STRUCTURE DE RÉPONSE:
-   - Retourne le MÊME JSON avec la même structure
+   - Retourne le MÊME JSON avec la même structure et le MÊME ORDRE des champs
    - Ne change PAS les autres champs
    - Remplis UNIQUEMENT 'dataValue_target_AI' (et 'confidence')
 
 4. CONFIDENCE:
    - Ajoute 'confidence' (0.0 à 1.0) pour chaque champ
-   - 1.0 = valeur trouvée avec certitude
+   - 1.0 = valeur trouvée avec certitude et cohérente avec le contexte du champ
    - 0.0 = valeur non trouvée (donc "non disponible")
 
 Format de réponse JSON:
