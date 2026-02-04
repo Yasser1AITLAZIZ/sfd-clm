@@ -118,8 +118,40 @@ class OCRManager:
         
         return text_blocks
 
+    def _should_cleanup_page(self, page: PageOCR) -> bool:
+        """Check if a page can be cleaned up (OCR successful with valid text)."""
+        return (
+            page.processed 
+            and page.ocr_text is not None 
+            and page.ocr_text != "" 
+            and page.ocr_text != "[Aucun texte visible]"
+        )
+
+    def _cleanup_page_image_b64(self, page: PageOCR) -> PageOCR:
+        """Clean up image_b64 from a page if OCR was successful.
+        
+        Returns a copy of the page with image_b64=None if conditions are met,
+        otherwise returns the page unchanged.
+        """
+        if not self._should_cleanup_page(page):
+            return page
+        
+        # Return page with image_b64 removed
+        return page.model_copy(update={"image_b64": None})
+
+    def _is_document_fully_processed(self, doc: Document) -> bool:
+        """Check if all pages of a document are processed."""
+        if not doc.pages:
+            return False
+        return all(page.processed for page in doc.pages)
+
     async def _ocr_page(self, page: PageOCR) -> Tuple[str, float, str, list, List[TextBlock]]:
         """Process a single page and return OCR results."""
+        # Safety check: ensure image_b64 is available
+        if not page.image_b64 or page.image_b64 == "":
+            print(f"⚠️ [OCR] Warning: page {page.page_number} has no image_b64, cannot process")
+            return "", 0.0, '', [f"ocr_error: missing image_b64"], []
+        
         print(f"🔍 [OCR] Starting OCR for page: mime={page.image_mime}, b64_len={len(page.image_b64)}")
         
         system = SystemMessage(content=_PROMPT_SYSTEM)
@@ -195,7 +227,7 @@ class OCRManager:
                     print(f"✅ [OCR Manager] OCR success: {len(text)} chars, quality_ocr={qs}, blocks={len(text_blocks)}")
                     
                     # Update page with OCR results
-                    documents[doc_idx].pages[page_idx] = page.model_copy(update={
+                    updated_page = page.model_copy(update={
                         "ocr_text": text,
                         "quality_score_ocerization": qs,
                         "quality_justification": qj,
@@ -203,6 +235,17 @@ class OCRManager:
                         "text_blocks": text_blocks,
                         "processed": True
                     })
+                    
+                    # Cleanup image_b64 if OCR was successful
+                    if self._should_cleanup_page(updated_page):
+                        size_before = len(updated_page.image_b64) if updated_page.image_b64 else 0
+                        cleaned_page = self._cleanup_page_image_b64(updated_page)
+                        documents[doc_idx].pages[page_idx] = cleaned_page
+                        if size_before > 0:
+                            size_mb = size_before / (1024 * 1024)
+                            print(f"🧹 [OCR Manager] Cleaned page {page_idx} of doc {doc_idx}: freed {size_mb:.2f} MB")
+                    else:
+                        documents[doc_idx].pages[page_idx] = updated_page
                     
                     # Cleanup memory after processing each page
                     self.memory_manager.cleanup_memory()
@@ -229,6 +272,61 @@ class OCRManager:
         print(f"🚀 [OCR Manager] Starting {len(tasks)} OCR tasks...")
         if tasks:
             await asyncio.gather(*tasks)
+
+        # Cleanup phase: remove image_b64 from all successfully OCRed pages
+        # Strategy: clean pages of fully processed documents first, then individual pages
+        total_cleaned = 0
+        total_freed_mb = 0.0
+        doc_stats = {}
+        fully_processed_docs = 0
+
+        for doc_idx, doc in enumerate(documents):
+            doc_cleaned = 0
+            doc_freed_mb = 0.0
+            is_fully_processed = self._is_document_fully_processed(doc)
+            
+            if is_fully_processed:
+                # Document fully processed: clean all pages with successful OCR
+                print(f"📄 [OCR Manager] Document {doc.id} fully processed, cleaning all pages...")
+                for page_idx, page in enumerate(doc.pages):
+                    if page.image_b64 and self._should_cleanup_page(page):
+                        size_before = len(page.image_b64)
+                        cleaned_page = self._cleanup_page_image_b64(page)
+                        if cleaned_page.image_b64 is None:
+                            documents[doc_idx].pages[page_idx] = cleaned_page
+                            doc_cleaned += 1
+                            doc_freed_mb += size_before / (1024 * 1024)
+                fully_processed_docs += 1
+            else:
+                # Document partially processed: clean only individual processed pages
+                for page_idx, page in enumerate(doc.pages):
+                    if page.image_b64 and page.processed and self._should_cleanup_page(page):
+                        size_before = len(page.image_b64)
+                        cleaned_page = self._cleanup_page_image_b64(page)
+                        if cleaned_page.image_b64 is None:
+                            documents[doc_idx].pages[page_idx] = cleaned_page
+                            doc_cleaned += 1
+                            doc_freed_mb += size_before / (1024 * 1024)
+            
+            if doc_cleaned > 0:
+                doc_stats[doc.id] = {
+                    "pages": doc_cleaned,
+                    "mb": doc_freed_mb,
+                    "fully_processed": is_fully_processed
+                }
+                total_cleaned += doc_cleaned
+                total_freed_mb += doc_freed_mb
+
+        # Log cleanup statistics
+        if total_cleaned > 0:
+            print(f"🧹 [OCR Manager] Cleanup complete: {total_cleaned} pages cleaned, {total_freed_mb:.2f} MB freed")
+            print(f"📊 [OCR Manager] Fully processed documents: {fully_processed_docs}/{len(documents)}")
+            if doc_stats:
+                stats_str = ", ".join([
+                    f"{doc_id}={stats['pages']} pages/{stats['mb']:.2f}MB ({'fully' if stats['fully_processed'] else 'partial'})"
+                    for doc_id, stats in doc_stats.items()
+                ])
+                print(f"📋 [OCR Manager] Per-document: {stats_str}")
 
         # Consolidate OCR text from all pages
         all_text_blocks = []

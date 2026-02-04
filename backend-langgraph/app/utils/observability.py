@@ -47,6 +47,15 @@ def setup_phoenix_observability(
             LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
             log.info("[Phoenix] OpenInference LangChain instrumented")
             
+            # NOTE IMPORTANTE : Ne pas utiliser trace_node() pour les nodes LangGraph
+            # LangChainInstrumentor instrumente automatiquement :
+            # - Les nodes LangGraph (chaque node devient un span)
+            # - Les agents ReAct (create_react_agent crée ses propres spans)
+            # - Les chaînes LangChain (chains, tools, etc.)
+            # Utiliser trace_node() en plus créerait des spans redondants.
+            # Le decorator trace_node() est utile uniquement pour du code Python
+            # personnalisé qui n'est pas déjà instrumenté par LangChainInstrumentor.
+            
         except Exception as e:
             log.warning("[Phoenix] Observability setup failed: %s", e)
     else:

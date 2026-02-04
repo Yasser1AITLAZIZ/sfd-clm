@@ -27,7 +27,7 @@ class PageOCR(BaseModel):
     """OCR result and quality metrics for a single page image.
 
     - page_number: 1-based index within the document
-    - image_b64/image_mime: original page image payload and mime
+    - image_b64/image_mime: original page image payload and mime (can be None after OCR success)
     - ocr_text: extracted text if available
     - quality_score_ocerization: normalized OCR quality score in [0,1]
     - issues: normalized list of quality issues
@@ -35,7 +35,7 @@ class PageOCR(BaseModel):
     - image_path: path to saved image file on disk (after OCR completion)
     """
     page_number: int
-    image_b64: str
+    image_b64: Optional[str] = None  # Can be removed after OCR success to reduce state size
     image_mime: str = ""
     ocr_text: Optional[str] = None
     processed: bool = False

@@ -120,7 +120,7 @@ async def upload_document(
             # Local development: calculate from file location
             current_file = Path(__file__)
             # Go up: app/api/v1/endpoints -> app/api/v1 -> app/api -> app -> backend-mcp -> project root
-            project_root = current_file.parent.parent.parent.parent.parent
+            project_root = current_file.parent.parent.parent.parent.parent.parent
             test_data_documents_dir = project_root / "test-data" / "documents"
         
         test_data_documents_dir.mkdir(parents=True, exist_ok=True)
