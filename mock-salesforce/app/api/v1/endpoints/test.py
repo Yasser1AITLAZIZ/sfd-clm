@@ -70,7 +70,8 @@ async def setup_test_data(request: SetupTestDataRequest) -> JSONResponse:
                 type=field_dict.get("type", "text"),
                 required=field_dict.get("required", False),
                 possibleValues=field_dict.get("possibleValues", []),
-                defaultValue=field_dict.get("defaultValue")
+                defaultValue=field_dict.get("defaultValue"),
+                formGroup=field_dict.get("formGroup")
             ))
         
         # Store test data

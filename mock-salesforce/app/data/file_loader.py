@@ -221,7 +221,8 @@ def load_fields_for_record(
                     type=field_data.get("type", "text"),
                     required=field_data.get("required", False),
                     possibleValues=field_data.get("possibleValues", []),
-                    defaultValue=field_data.get("defaultValue")
+                    defaultValue=field_data.get("defaultValue"),
+                    formGroup=field_data.get("formGroup")
                 )
                 fields.append(field)
             except Exception as e:

@@ -46,6 +46,7 @@ class SalesforceFormFieldSchema(BaseModel):
     required: bool = Field(default=False, description="Whether field is required")
     possibleValues: List[str] = Field(default_factory=list, description="Possible values for picklist/radio")
     defaultValue: Optional[str] = Field(default=None, description="Default value")
+    formGroup: Optional[str] = Field(default=None, description="Form group / page label for frontend display (frontend-only)")
     
     @field_validator("label", "type")
     @classmethod

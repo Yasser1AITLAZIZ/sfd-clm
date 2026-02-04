@@ -35,7 +35,7 @@ client = TestClient(app)
 
 
 def test_get_record_data_success():
-    """Test successful retrieval of record data"""
+    """Test successful retrieval of record data (new format with 'fields')."""
     response = client.post(
         "/mock/salesforce/get-record-data",
         json={"record_id": "001XX000001"}
@@ -47,7 +47,8 @@ def test_get_record_data_success():
     assert "data" in data
     assert data["data"]["record_id"] == "001XX000001"
     assert "documents" in data["data"]
-    assert "fields_to_fill" in data["data"]
+    assert "fields" in data["data"]
+    assert isinstance(data["data"]["fields"], list)
 
 
 def test_get_record_data_not_found():
@@ -81,6 +82,22 @@ def test_get_record_data_missing_field():
     )
     
     assert response.status_code == 422  # Validation error
+
+
+def test_get_record_data_returns_form_group_when_present():
+    """When fields JSON has formGroup, response fields include formGroup (e.g. 001XX000001_fields.json)."""
+    response = client.post(
+        "/mock/salesforce/get-record-data",
+        json={"record_id": "001XX000001"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    if data.get("status") != "success" or not data.get("data", {}).get("fields"):
+        pytest.skip("Record 001XX000001 or fields file not available")
+    fields = data["data"]["fields"]
+    with_form_group = [f for f in fields if f.get("formGroup")]
+    assert len(with_form_group) > 0, "At least one field should have formGroup when source JSON has it"
+    assert all(isinstance(f["formGroup"], str) and f["formGroup"].strip() for f in with_form_group[:1])
 
 
 def test_health_check():
