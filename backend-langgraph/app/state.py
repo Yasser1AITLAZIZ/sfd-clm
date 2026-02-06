@@ -33,6 +33,9 @@ class PageOCR(BaseModel):
     - issues: normalized list of quality issues
     - text_blocks: visual blocks with bounding boxes extracted from OCR
     - image_path: path to saved image file on disk (after OCR completion)
+    - page_type: document type for this page (from ClassificationManager)
+    - page_type_confidence: confidence for page_type [0,1]
+    - page_type_evidence: short evidence string for classification
     """
     page_number: int
     image_b64: Optional[str] = None  # Can be removed after OCR success to reduce state size
@@ -44,6 +47,9 @@ class PageOCR(BaseModel):
     issues: List[str] = Field(default_factory=list)
     text_blocks: List[TextBlock] = Field(default_factory=list)
     image_path: Optional[str] = None
+    page_type: Optional[str] = None
+    page_type_confidence: float = 0.0
+    page_type_evidence: Optional[str] = None
 
 
 class Document(BaseModel):
@@ -77,6 +83,9 @@ class MCPAgentState(BaseModel):
 
     # Routage / contrôle
     next_step: Optional[str] = None
+    user_intent: Optional[str] = None  # process_documents | prefill_form | qa_session | full_pipeline | unknown
+    user_response_message: Optional[str] = None  # Message résumé/confirmation pour l'utilisateur
+    step_completed: Optional[str] = None  # ocr_only | prefill | qa | full
 
     # Données MCP
     record_id: str = ""
@@ -105,4 +114,36 @@ class MCPAgentState(BaseModel):
 
     # Erreurs
     errors: List[str] = Field(default_factory=list)
+
+
+class PreFillingSubAgentState(BaseModel):
+    """State for Pre-filling Manager sub-agent (ReAct)."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    documents: List[Document] = Field(default_factory=list)
+    form_json: List[Dict[str, Any]] = Field(default_factory=list)
+    filled_form_json: Optional[List[Dict[str, Any]]] = None
+    validation_results: Dict[str, Any] = Field(default_factory=dict)
+    confidence_scores: Dict[str, float] = Field(default_factory=dict)
+    quality_score: Optional[float] = None
+    record_id: str = ""
+    messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
+    remaining_steps: int = 10
+    iteration_count: int = 0
+
+
+class QASubAgentState(BaseModel):
+    """State for Q/A Manager sub-agent (ReAct)."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    filled_form_json: List[Dict[str, Any]] = Field(default_factory=list)
+    form_json: List[Dict[str, Any]] = Field(default_factory=list)
+    documents: List[Document] = Field(default_factory=list)
+    validation_results: Dict[str, Any] = Field(default_factory=dict)
+    record_id: str = ""
+    messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
+    remaining_steps: int = 10
+    iteration_count: int = 0
 

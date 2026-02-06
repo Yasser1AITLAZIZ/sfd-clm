@@ -625,6 +625,29 @@ Le système supporte deux formats de logs :
 5. **Rate Limiting** : Pour protéger les APIs
 6. **Health Checks** : Endpoints `/health` pour le monitoring
 
+## LangGraph : Un seul flux IFX, routing par intention
+
+Le Backend LangGraph utilise **un seul flux d’entrée** : l’Orchestrator (Supervisor) reçoit la requête utilisateur et route selon **l’intention (message utilisateur) + l’état** (Shared Storage, `filled_form_json`).
+
+### Intentions supportées
+
+| Intention | Exemple de message | Comportement |
+|-----------|--------------------|--------------|
+| **process_documents** | « Traiter les documents », « clôturer ces documents » | OCR Synthesizer → Shared Storage → **fin** (résumé, pas de préremplissage ni Q/A) |
+| **prefill_form** | « Préremplir », « pre-fill » | Pre-filling Manager (template depuis Shared Storage). Si pas de template → OCR d’abord. |
+| **qa_session** | « Questions », « Q&A », « vérifier » | Q/A Manager (avec formulaire prérempli) |
+| **full_pipeline** | « Tout faire », « pipeline complet » | OCR (si besoin) → Pre-fill → Q/A |
+
+### Réponses utilisateur et API
+
+- **user_response_message** : message de résumé/confirmation après chaque étape (ex. après OCR, après préremplissage).
+- **step_completed** : indicateur optionnel `ocr_only` \| `prefill` \| `qa` \| `full` pour adapter l’affichage frontend.
+- **filled_form_json** : reste le format de sortie principal ; les champs ci-dessus sont additifs.
+
+### Rollback
+
+Pour désactiver le routing par intention et revenir à un flux séquentiel : dans `config_agent.yaml`, définir `use_intent_routing: false` (ou commenter la clé pour garder la valeur par défaut `true`).
+
 ## Conclusion
 
 Cette architecture simplifiée permet un traitement robuste et scalable des sinistres avec extraction intelligente de données depuis documents. Le système est conçu pour être modulaire, maintenable et évolutif, avec une préservation maximale des informations originales.

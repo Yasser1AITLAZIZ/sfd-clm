@@ -26,6 +26,10 @@ class ConfigLoader:
             raise KeyError(f"No config found for agent '{agent_name}' in {self.config_path}")
         return self._config[agent_name]
 
+    def get_config(self):
+        """Get full config dict (e.g. for use_intent_routing at root)."""
+        return self._config or {}
+
 
 # Singleton
 _config_loader = None

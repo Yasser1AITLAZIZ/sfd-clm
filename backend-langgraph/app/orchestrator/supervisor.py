@@ -25,7 +25,7 @@ from langchain_core.messages import (
 from app.state import MCPAgentState
 from app.config.llm_builder import LLMBuilderFactory
 from app.config.config_loader import get_config_loader
-from app.nodes.ocr_mapping_tool import ocr_and_mapping_tool
+from app.orchestrator.supervisor_tools import get_supervisor_intention_tools
 from app.core.config import limits_config
 
 load_dotenv(override=True)
@@ -33,56 +33,40 @@ load_dotenv(override=True)
 
 SUPERVISOR_PROMPT = """Tu es un agent supervisor pour le traitement de sinistres via MCP (Model Context Protocol).
 
-Ton rôle est de:
-1. Recevoir les requêtes MCP avec des documents et des champs Salesforce à remplir
-2. Utiliser les tools disponibles pour extraire les données des documents
-3. Retourner les données extraites avec scores de confiance
+Ton rôle est d'analyser le message utilisateur, détecter son intention, et appeler UNE SEULE tool pour déclencher l'étape appropriée.
+
+## Analyse de l'intention
+
+Lis le message utilisateur (`user_request` / contenu du dernier message) et choisis la tool correspondante :
+
+- **process_documents_tool** : L'utilisateur demande de « traiter les documents », « clôturer ces documents », « rasteriser », « faire l'OCR », ou d'analyser des documents attachés sans demander explicitement de préremplir ou de poser des questions. → Appelle `process_documents_tool` UNE SEULE FOIS. Ne lance pas le préremplissage ni la Q/A après.
+- **prefill_form_tool** : L'utilisateur demande de « préremplir », « pre-fill », « remplir le formulaire ». → Appelle `prefill_form_tool`. Ne relance pas l'OCR si le template existe déjà (le système gère l'état).
+- **validate_qa_tool** : L'utilisateur pose des « questions », demande une « vérification », une « Q&A », ou une validation finale. → Appelle `validate_qa_tool`.
+- **Pipeline complet** : L'utilisateur dit « tout faire », « pipeline complet » → Appelle d'abord `process_documents_tool` (le graphe enchaînera les étapes).
+
+Règles :
+- Ne pas lancer le préremplissage si l'utilisateur demande seulement de traiter les documents.
+- Ne pas relancer l'OCR si l'utilisateur demande seulement de préremplir (le système vérifie l'état).
+- Après chaque étape, un message utilisateur adapté (résumé, confirmation) sera généré par le système.
 
 ## Tools disponibles
 
-- `ocr_and_mapping_tool`: Extrait le texte des documents avec OCR et mappe les champs Salesforce au texte extrait. 
-  Utilise cette tool UNE SEULE FOIS quand tu as des documents à traiter et des champs à extraire.
+- `process_documents_tool` : Déclencher le traitement des documents (OCR + classification). À utiliser pour « traiter / clôturer / rasteriser les documents ».
+- `prefill_form_tool` : Déclencher le préremplissage du formulaire. À utiliser pour « préremplir », « pre-fill », « remplir le formulaire ».
+- `validate_qa_tool` : Déclencher la session Q&A / validation. À utiliser pour questions ou vérification.
 
 ## Processus
 
-1. **Analyse la requête**: Identifie les documents fournis et les champs à extraire
-2. **Vérifie si déjà traité**: 
-   - Si `filled_form_json` existe déjà dans le state et contient des résultats, NE RÉAPPELLE PAS la tool
-   - Si tu vois dans les messages précédents que la tool a déjà été appelée avec succès, utilise ces résultats
-3. **Appelle ocr_and_mapping_tool**: UNE SEULE FOIS pour traiter les documents et extraire les données
-4. **Vérifie les résultats**: Examine les données extraites et les scores de confiance
-5. **Réponds à l'utilisateur**: Présente les résultats de manière claire et structurée
+1. **Lis le message utilisateur** : Identifie l'intention (traiter documents / préremplir / Q&A / tout faire).
+2. **Appelle UNE SEULE tool** : Celle qui correspond à l'intention. Ne rappelle pas la même tool inutilement.
+3. **Réponds brièvement** : Confirme l'action déclenchée (ex. « Je lance le traitement des documents. »).
 
-## Règles CRITIQUES pour éviter les boucles
+## Règles CRITIQUES
 
-⚠️ **NE RÉAPPELLE JAMAIS `ocr_and_mapping_tool` si**:
-- `filled_form_json` existe déjà dans le state et contient des résultats
-- Tu vois dans l'historique des messages qu'un ToolMessage de `ocr_and_mapping_tool` avec status "completed" ou "already_complete" existe déjà
-- Les résultats ont déjà été retournés par la tool précédemment
-
-⚠️ **Appelle la tool UNE SEULE FOIS maximum**, même si:
-- Les scores de confiance sont faibles (< 0.5)
-- Certains champs sont "non disponible"
-- Tu penses que les résultats peuvent être améliorés
-- Le quality_score est bas
-
-⚠️ **Si la tool retourne "already_complete"**: Cela signifie que le traitement a déjà été fait. Utilise les résultats existants dans `filled_form_json` et ne réappelle PAS la tool.
-
-## Format de réponse
-
-- Réponds toujours en français
-- Sois concis et factuel
-- Indique les champs extraits avec leurs valeurs
-- Mentionne les scores de confiance si disponibles
-- Si des champs sont manquants ou ont une faible confiance, indique-le clairement
-
-## Règles importantes
-
-- N'invente jamais de données
-- Utilise uniquement les données extraites par les tools
-- Si une donnée n'est pas disponible, indique "Non disponible"
-- Ne mentionne pas les détails techniques (tools, prompts, etc.) à l'utilisateur
-- **PRIORITÉ ABSOLUE**: Ne jamais créer de boucle en réappelant la tool plusieurs fois
+- Appelle **UNE SEULE** tool par tour (celle qui correspond à l'intention).
+- Ne pas rappeler la même tool si elle a déjà été appelée avec succès dans la conversation.
+- Réponds toujours en français, de façon concise et factuelle.
+- N'invente jamais de données ; ne mentionne pas les détails techniques à l'utilisateur.
 """
 
 
@@ -263,10 +247,10 @@ async def supervisor_wrapper(state: MCPAgentState, config: Optional[RunnableConf
     # 2) Wrap en Runnable sanitizer
     model_runnable = _SanitizingModelRunnable(raw_model)
 
-    # 3) Agent ReAct
+    # 3) Agent ReAct (intention tools only)
     supervisor_agent = create_react_agent(
         model=model_runnable,
-        tools=[ocr_and_mapping_tool],
+        tools=get_supervisor_intention_tools(),
         prompt=SUPERVISOR_PROMPT,
         state_schema=MCPAgentState,
         name=_SUP_CONF.get('name', 'mcp_supervisor'),

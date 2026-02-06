@@ -25,6 +25,53 @@ mapping:
   # This timeout is intentionally 2x OCR timeout due to complexity
   llm_extraction_timeout: 120.0
 
+# OCR Synthesizer (OCR + Classification)
+ocr_synthesizer:
+  provider: "openai"
+  model: "gpt-4o-2024-11-20"
+  temperature: 0.0
+  llm_extraction_timeout: 120.0
+
+# Document Classifier (part of OCR Synthesizer)
+document_classifier:
+  provider: "openai"
+  model: "gpt-4o-2024-11-20"
+  temperature: 0.0
+  llm_extraction_timeout: 60.0
+
+# Pre-filling Manager (sub-agent)
+prefilling_manager:
+  provider: "openai"
+  model: "gpt-4o-2024-11-20"
+  temperature: 0.1
+  reasoning_effort: "medium"
+  remaining_steps: 10
+
+# Expert Validation Tool (used by Pre-filling Manager)
+expert_validation:
+  provider: "openai"
+  model: "gpt-4o-2024-11-20"
+  temperature: 0.1
+  llm_extraction_timeout: 120.0
+
+# Q/A Manager (sub-agent)
+qa_manager:
+  provider: "openai"
+  model: "gpt-4o-2024-11-20"
+  temperature: 0.1
+  reasoning_effort: "medium"
+  remaining_steps: 10
+
+# Q/A Validation Tool (used by Q/A Manager)
+qa_validation:
+  provider: "openai"
+  model: "gpt-4o-2024-11-20"
+  temperature: 0.1
+  llm_extraction_timeout: 120.0
+
+# Optional: disable intention-based routing (rollback to sequential flow)
+# use_intent_routing: true
+
 limits:
   # Text blocks limits
   max_text_blocks: 50

@@ -28,3 +28,10 @@ def get_compiled_graph():
         checkpointer=get_checkpointer()
     )
 
+
+@lru_cache(maxsize=1)
+def get_shared_storage():
+    """Get SharedTemplateStorage singleton (indexed by record_id)."""
+    from app.utils.shared_storage import SharedTemplateStorage
+    return SharedTemplateStorage()
+

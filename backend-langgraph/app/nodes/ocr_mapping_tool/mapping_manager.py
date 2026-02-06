@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.state import TextBlock, Document
@@ -130,14 +130,17 @@ class MappingManager:
     async def map_fields_to_ocr(
         self,
         documents: List[Document],
-        form_json: List[Dict[str, Any]]
+        form_json: List[Dict[str, Any]],
+        validation_feedback: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Map Salesforce fields to OCR text, processing page by page.
+        If validation_feedback (expert_validation) is provided, include suggested corrections in the prompt.
         
         Args:
             documents: List of documents with pages containing OCR text
             form_json: List of field objects (same structure as input)
+            validation_feedback: Optional expert_validation report (field_feedback with suggested_correction)
             
         Returns:
             Dictionary with filled_form_json (same structure with dataValue_target_AI filled)
@@ -145,6 +148,8 @@ class MappingManager:
         print(f"🗺️ [Mapping] Starting page-by-page field mapping...")
         print(f"📄 [Mapping] Documents: {len(documents)}")
         print(f"📋 [Mapping] Fields to map: {len(form_json)}")
+        if validation_feedback:
+            print(f"📋 [Mapping] Using validation feedback for corrections")
         
         # Prepare form JSON for prompt (ensure it's a list of dicts)
         form_json_for_prompt = []
@@ -157,7 +162,7 @@ class MappingManager:
                 # Convert to dict
                 form_json_for_prompt.append(dict(field) if hasattr(field, '__dict__') else {})
         
-        # Collect all pages from all documents with their OCR data
+        # Collect all pages from all documents with their OCR data (include page_type if available)
         all_pages = []
         for doc in documents:
             for page in doc.pages:
@@ -167,7 +172,8 @@ class MappingManager:
                         "ocr_text": page.ocr_text,
                         "text_blocks": page.text_blocks,
                         "quality_score_ocerization": page.quality_score_ocerization,
-                        "doc_id": doc.id
+                        "doc_id": doc.id,
+                        "page_type": getattr(page, "page_type", None),
                     })
         
         print(f"📄 [Mapping] Processing {len(all_pages)} pages")
@@ -213,9 +219,15 @@ class MappingManager:
                 "page_info": {
                     "page_number": page_num,
                     "total_pages": len(all_pages),
-                    "quality_score_ocerization": page_quality
+                    "quality_score_ocerization": page_quality,
+                    "page_type": page_data.get("page_type"),
                 }
             }
+            if validation_feedback and (validation_feedback.get("field_feedback") or validation_feedback.get("illogical_values")):
+                prompt_data["validation_feedback"] = {
+                    "field_feedback": validation_feedback.get("field_feedback", [])[:30],
+                    "illogical_values": validation_feedback.get("illogical_values", [])[:20],
+                }
             
             human = HumanMessage(content=json.dumps(prompt_data, ensure_ascii=False, indent=2))
             

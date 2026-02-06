@@ -626,6 +626,8 @@ async def process_mcp_request(request: Request) -> JSONResponse:
         field_mappings = getattr(final_state, 'field_mappings', None) or (final_state.get('field_mappings', {}) if isinstance(final_state, dict) else {})
         ocr_text = getattr(final_state, 'ocr_text', None) or (final_state.get('ocr_text') if isinstance(final_state, dict) else None)
         text_blocks = getattr(final_state, 'text_blocks', None) or (final_state.get('text_blocks', []) if isinstance(final_state, dict) else [])
+        user_response_message = getattr(final_state, 'user_response_message', None) or (final_state.get('user_response_message') if isinstance(final_state, dict) else None)
+        step_completed = getattr(final_state, 'step_completed', None) or (final_state.get('step_completed') if isinstance(final_state, dict) else None)
         
         # Fallback: If extracted_data is empty but field_mappings has data, extract values from field_mappings
         if (not extracted_data or len(extracted_data) == 0) and field_mappings and len(field_mappings) > 0:
@@ -748,7 +750,9 @@ async def process_mcp_request(request: Request) -> JSONResponse:
                 "processing_time": execution_time,
                 "ocr_text_length": len(ocr_text or "") if ocr_text else 0,
                 "text_blocks_count": len(text_blocks) if text_blocks else 0,
-                "metrics": serialize_value(metrics_summary) if metrics_summary else {}
+                "metrics": serialize_value(metrics_summary) if metrics_summary else {},
+                "user_response_message": user_response_message,  # Optional: message for frontend (résumé, confirmation)
+                "step_completed": step_completed,  # Optional: ocr_only | prefill | qa | full
             }
             
             # Log response_data after serialization
